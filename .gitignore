@@ -1,0 +1,72 @@
+# OAuth credentials and tokens - NEVER commit these
+credentials.json
+token.json
+gsheet_token.json
+*_token.json
+
+# Personal config files (use config.example.py as template)
+config.py
+
+# macOS system files
+.DS_Store
+.AppleDouble
+.LSOverride
+._*
+
+# Obsidian config (if using as vault)
+.obsidian/
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+
+# Virtual environments
+venv/
+ENV/
+env/
+.venv/
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# Logs
+*.log
+
+# Temporary files
+*.tmp
+*.temp
+
+# Environment files with secrets
+.env
+.env.local
+.env.*.local
+
+# Any file with 'secret' in the name
+*secret*
+*SECRET*
+
+# Backup files
+*.bak
+*.backup
