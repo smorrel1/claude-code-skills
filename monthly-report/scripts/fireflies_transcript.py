@@ -32,6 +32,7 @@ import argparse
 import json
 import os
 import re
+import subprocess
 import sys
 import time
 from datetime import datetime
@@ -339,7 +340,7 @@ def stream_live_meeting(meeting_id: str, api_key: str, output_dir: Path):
         import socketio
     except ImportError:
         print("Installing python-socketio[client]...")
-        os.system("pip3 install 'python-socketio[client]'")
+        subprocess.run(["pip3", "install", "python-socketio[client]"], check=True)
         import socketio
 
     output_dir.mkdir(parents=True, exist_ok=True)
@@ -453,8 +454,8 @@ def download_via_browser(url: str, output_dir: Path):
         from playwright.sync_api import sync_playwright
     except ImportError:
         print("Playwright not installed. Installing...")
-        os.system("pip3 install playwright")
-        os.system("playwright install chromium")
+        subprocess.run(["pip3", "install", "playwright"], check=True)
+        subprocess.run(["playwright", "install", "chromium"], check=True)
         from playwright.sync_api import sync_playwright
 
     print(f"Opening URL in browser: {url}")

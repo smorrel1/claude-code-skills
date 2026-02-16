@@ -1,3 +1,8 @@
+---
+name: gcal
+description: Google Calendar integration for viewing, creating, updating, and deleting calendar events. Use when the user wants to check their schedule, create meetings, find availability, list upcoming events, or manage calendar entries.
+---
+
 # Google Calendar Skill
 
 CRUD operations for Google Calendar using OAuth credentials.

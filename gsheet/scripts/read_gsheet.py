@@ -395,8 +395,69 @@ def format_as_markdown_table(data: dict) -> str:
     return "\n".join(lines)
 
 
+def append_row(spreadsheet_id: str, sheet_name: str, values: list) -> dict:
+    """
+    Append a new row at the end of the sheet.
+
+    Args:
+        spreadsheet_id: The spreadsheet ID
+        sheet_name: Sheet name
+        values: List of values for the new row
+
+    Returns:
+        dict with result
+    """
+    creds = get_credentials()
+    service = build('sheets', 'v4', credentials=creds)
+
+    range_str = f"'{sheet_name}'!A:A"
+
+    result = service.spreadsheets().values().append(
+        spreadsheetId=spreadsheet_id,
+        range=range_str,
+        valueInputOption='USER_ENTERED',
+        insertDataOption='INSERT_ROWS',
+        body={'values': [values]}
+    ).execute()
+
+    return result
+
+
+def batch_update_cells(spreadsheet_id: str, sheet_name: str, updates: list) -> dict:
+    """
+    Update multiple cells in a single batch.
+
+    Args:
+        spreadsheet_id: The spreadsheet ID
+        sheet_name: Sheet name
+        updates: List of dicts with 'cell' and 'value' keys, e.g., [{'cell': 'A1', 'value': 'hello'}]
+
+    Returns:
+        dict with result
+    """
+    creds = get_credentials()
+    service = build('sheets', 'v4', credentials=creds)
+
+    data = []
+    for update in updates:
+        data.append({
+            'range': f"'{sheet_name}'!{update['cell']}",
+            'values': [[update['value']]]
+        })
+
+    result = service.spreadsheets().values().batchUpdate(
+        spreadsheetId=spreadsheet_id,
+        body={
+            'valueInputOption': 'USER_ENTERED',
+            'data': data
+        }
+    ).execute()
+
+    return result
+
+
 def main():
-    parser = argparse.ArgumentParser(description="Read and manage Google Sheets")
+    parser = argparse.ArgumentParser(description="Read and write Google Sheets")
     parser.add_argument("spreadsheet", help="Spreadsheet URL or ID")
     parser.add_argument("--sheet", "-s", help="Sheet name (default: first sheet)")
     parser.add_argument("--range", "-r", help="Range to read (e.g., 'A1:D10' or '1:5')")
@@ -409,12 +470,42 @@ def main():
     parser.add_argument("--value", "-v", help="Value to write to cell (use with --edit)")
     parser.add_argument("--find", help="Find row containing this value in first column")
     parser.add_argument("--find-col", default="A", help="Column to search in (default: A)")
+    parser.add_argument("--insert-row", type=int, help="Insert new row after this row number")
+    parser.add_argument("--row-values", help="Comma-separated values for new row (use with --insert-row or --append)")
+    parser.add_argument("--append", action="store_true", help="Append a new row at end of sheet")
+    parser.add_argument("--batch-edit", help="JSON array of cell updates, e.g., '[{\"cell\":\"A1\",\"value\":\"x\"}]'")
 
     args = parser.parse_args()
 
     spreadsheet_id = extract_spreadsheet_id(args.spreadsheet)
 
     try:
+        # Handle batch edit
+        if args.batch_edit:
+            sheet = args.sheet or list_sheets(spreadsheet_id)[0]
+            updates = json.loads(args.batch_edit)
+            result = batch_update_cells(spreadsheet_id, sheet, updates)
+            print(f"Updated {result.get('totalUpdatedCells', 0)} cell(s)")
+            return
+
+        # Handle append row
+        if args.append and args.row_values:
+            sheet = args.sheet or list_sheets(spreadsheet_id)[0]
+            values = [v.strip() for v in args.row_values.split(',')]
+            result = append_row(spreadsheet_id, sheet, values)
+            print(f"Appended row to '{sheet}'")
+            return
+
+        # Handle insert row
+        if args.insert_row:
+            sheet = args.sheet or list_sheets(spreadsheet_id)[0]
+            values = None
+            if args.row_values:
+                values = [v.strip() for v in args.row_values.split(',')]
+            result = insert_row(spreadsheet_id, sheet, args.insert_row, values)
+            print(f"Inserted row at {result['new_row']} in '{sheet}'")
+            return
+
         if args.find:
             sheet = args.sheet or list_sheets(spreadsheet_id)[0]
             row = find_row_by_value(spreadsheet_id, sheet, args.find_col, args.find)
