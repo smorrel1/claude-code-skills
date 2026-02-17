@@ -4,8 +4,9 @@ token.json
 gsheet_token.json
 *_token.json
 
-# Personal config files (use config.example.py as template)
+# Personal config files (use config.example.* as template)
 config.py
+config.json
 
 # macOS system files
 .DS_Store

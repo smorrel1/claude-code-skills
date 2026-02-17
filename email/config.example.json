@@ -1,0 +1,28 @@
+{
+  "accounts": {
+    "work": {
+      "primary": {
+        "email": "you@company.com",
+        "description": "Work email",
+        "default": true
+      }
+    },
+    "personal": {
+      "gmail": {
+        "email": "you@gmail.com",
+        "description": "Personal email"
+      }
+    }
+  },
+  "search_order": {
+    "work": ["primary", "gmail"],
+    "personal": ["gmail", "primary"]
+  },
+  "style": {
+    "greeting": "Hi",
+    "tone": "professional",
+    "include_minor_errors": false,
+    "use_emojis_when_natural": false
+  },
+  "signature": "Your Name\nYour Title\nyour.email@example.com"
+}
