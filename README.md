@@ -18,6 +18,7 @@ Skills are reusable modules that extend Claude Code's capabilities. Each skill p
 | [gsheet](#google-sheets) | Read/write Google Sheets | OAuth setup (uses Gmail creds) |
 | [gcal](#google-calendar) | Google Calendar CRUD operations | OAuth setup (uses Gmail creds) |
 | [docx-editor](#docx-editor) | Word document character normalization | None |
+| [interview-transcript](#interview-transcript) | YouTube/X.com transcript to Kindle EPUB | yt-dlp + Calibre |
 | [monthly-report](#monthly-report) | Monthly board report generation | Custom paths + OAuth |
 
 ---
@@ -141,6 +142,41 @@ python3 ~/.claude/skills/gcal/scripts/cal_utils.py create --summary "Meeting" --
 # Check availability
 python3 ~/.claude/skills/gcal/scripts/cal_utils.py availability 2025-01-15
 ```
+
+---
+
+### Interview Transcript
+
+Download and transcribe interviews/talks from YouTube and X.com (Twitter), clean them up, and convert to Kindle-ready EPUBs with cover images and clickable table of contents.
+
+**Features:**
+- Auto-detects YouTube vs X.com URLs
+- YouTube-first search for X.com posts (faster subtitle extraction vs whisper transcription)
+- Mechanical filler word removal + LLM-based transcription fixing and section headers
+- EPUB with cover image and clickable TOC
+- Send to Kindle, upload to Google Drive for shareable link
+
+**Setup:**
+```bash
+brew install yt-dlp calibre
+pip install jinja2
+# Optional (X.com fallback): brew install whisper-cpp ffmpeg
+```
+
+**Usage:**
+```bash
+# Download transcript
+python3 ~/.claude/skills/interview-transcript/scripts/youtube_transcript.py --url "https://youtube.com/watch?v=VIDEO_ID"
+
+# Clean filler words
+python3 ~/.claude/skills/interview-transcript/scripts/youtube_transcript.py --clean transcript.txt
+
+# Convert to EPUB with cover
+python3 ~/.claude/skills/interview-transcript/scripts/youtube_transcript.py --to-epub structured.txt \
+  --title "Interview Title" --author "Speaker" --youtube-cover "https://youtube.com/watch?v=VIDEO_ID"
+```
+
+Or just use it as a Claude Code skill: `/interview-transcript <URL>`
 
 ---
 
