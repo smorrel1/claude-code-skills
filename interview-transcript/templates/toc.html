@@ -1,0 +1,18 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta http-equiv="Content-Type" content="text/html; charset=utf-8">
+    <title>Table of Contents</title>
+    <link rel="stylesheet" type="text/css" href="style.css" />
+</head>
+<body>
+    <a id="toc"></a>
+    <h1>Table of Contents</h1>
+    <div class="toc">
+        {% for section in sections %}
+        <p><a href="content.html#section_{{ loop.index }}">{{ section.title }}</a></p>
+        {% endfor %}
+    </div>
+    <mbp:pagebreak />
+</body>
+</html>

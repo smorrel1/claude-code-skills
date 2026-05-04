@@ -1,0 +1,44 @@
+body {
+    font-family: Georgia, serif;
+    line-height: 1.6;
+    margin: 1em;
+}
+
+h1 {
+    font-size: 1.5em;
+    margin-bottom: 0.5em;
+    text-align: center;
+}
+
+h2 {
+    font-size: 1.2em;
+    margin-top: 1.5em;
+    margin-bottom: 0.5em;
+}
+
+p {
+    text-indent: 1.5em;
+    margin: 0.5em 0;
+    text-align: justify;
+}
+
+.meta {
+    text-indent: 0;
+    text-align: center;
+    color: #666;
+    font-size: 0.9em;
+    margin-bottom: 1em;
+}
+
+.toc {
+    margin: 1em 0;
+}
+
+.toc p {
+    text-indent: 0;
+    margin: 0.3em 0;
+}
+
+.toc a {
+    text-decoration: none;
+}
