@@ -605,7 +605,10 @@ def text_to_epub(text: str, title: str = "YouTube Transcript",
         'cover_image': cover_filename,
     }
 
-    for template_name in ['book.opf', 'toc.html', 'content.html', 'book.ncx', 'style.css']:
+    templates_to_render = ['book.opf', 'toc.html', 'content.html', 'book.ncx', 'style.css']
+    if cover_filename:
+        templates_to_render.append('cover.html')
+    for template_name in templates_to_render:
         try:
             template = env.get_template(template_name)
             output_content = template.render(**template_data)

@@ -19,21 +19,28 @@
 </metadata>
 
 <manifest>
+   {% if cover_image %}
+   <item id="cover-page" media-type="text/x-oeb1-document" href="cover.html"></item>
+   <item id="cover" media-type="image/jpeg" href="{{ cover_image }}" properties="cover-image"></item>
+   {% endif %}
    <item id="content" media-type="text/x-oeb1-document" href="content.html"></item>
    <item id="toc" media-type="text/x-oeb1-document" href="toc.html"></item>
    <item id="ncx" media-type="application/x-dtbncx+xml" href="book.ncx"/>
-   {% if cover_image %}
-   <item id="cover" media-type="image/jpeg" href="{{ cover_image }}"></item>
-   {% endif %}
    <item id="style" media-type="text/css" href="style.css"></item>
 </manifest>
 
 <spine toc="ncx">
+    {% if cover_image %}
+    <itemref idref="cover-page"/>
+    {% endif %}
     <itemref idref="toc"/>
     <itemref idref="content"/>
 </spine>
 
 <guide>
+    {% if cover_image %}
+    <reference type="cover" title="Cover" href="cover.html"></reference>
+    {% endif %}
     <reference type="toc" title="Table of Contents" href="toc.html#toc"></reference>
     <reference type="text" title="Start" href="content.html#start"></reference>
 </guide>
