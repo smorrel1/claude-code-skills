@@ -52,10 +52,11 @@ ACCOUNT_TOKENS = {
 CURRENT_ACCOUNT = 'elaitra'
 
 # Gmail API scopes
+# gmail.compose lets us create drafts; we deliberately omit gmail.send so
+# this skill cannot send mail directly. The user clicks Send in Gmail.
 SCOPES = [
     'https://www.googleapis.com/auth/gmail.readonly',
     'https://www.googleapis.com/auth/gmail.compose',
-    'https://www.googleapis.com/auth/gmail.send'
 ]
 
 
