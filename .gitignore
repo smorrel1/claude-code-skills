@@ -1,8 +1,10 @@
 # OAuth credentials and tokens - NEVER commit these
 credentials.json
+credentials.json.*
 token.json
 gsheet_token.json
 *_token.json
+token_*.json
 
 # Personal config files (use config.example.* as template)
 config.py
