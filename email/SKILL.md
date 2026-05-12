@@ -142,6 +142,16 @@ python3 scripts/gmail_utils.py delete-draft --id "draft_id_here"
 - Default to `--reply-to` with the message ID when replying to existing conversations
 - This ensures proper threading and includes the quoted email chain automatically
 - Use `--new` when the user specifies starting a fresh thread, or when clearly starting an unrelated conversation
+- **`@kindle.com` recipients are auto-detected and never threaded** — Amazon ingests each Send-to-Kindle email independently, and threaded replies render as "Re: (No Subject)" in the Gmail Sent folder. The skill skips the auto-thread lookup whenever the recipient address ends in `@kindle.com`.
+
+## Send-to-Kindle Workflow
+
+Stephen's Send-to-Kindle address is stored in `~/.claude/projects/-home-mhutel-Dropbox-Documents/memory/kindle.md`. To deliver a document:
+
+1. Generate the file in a Kindle-supported format: PDF, EPUB, DOCX, RTF, TXT, HTM/HTML, JPG, PNG, GIF, BMP, or MOBI. EPUB and MOBI reflow on small screens — prefer those for prose over PDF.
+2. `send --account gmail --to "stephen.morrell_FDnf9R@kindle.com" --subject "<title>" --body "<short HTML description>" --attach <file>` — auto-threading is skipped for kindle.com, so the subject lands cleanly.
+3. The sending address (e.g. `stephen.morrell@gmail.com`) must be on Stephen's Kindle Approved Personal Document Email List at amazon.co.uk → Manage Your Content and Devices → Preferences → Personal Document Settings. If a send seems to vanish, that's the first thing to check.
+4. Size limit: 50 MB per email. Split larger files.
 
 ## Notes
 

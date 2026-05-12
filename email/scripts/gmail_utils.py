@@ -224,16 +224,22 @@ def create_message(to: str, subject: str, body: str, cc: str = None, bcc: str = 
     # - Not explicitly starting a new thread (--new)
     # - No explicit reply-to ID provided
     # - We have a recipient email
+    # - Recipient is not a Send-to-Kindle address (those should never be threaded:
+    #   Amazon ingests each message independently, and threaded replies inherit
+    #   "Re: (No Subject)" which is ugly in the Gmail Sent folder.)
     if not new_thread and not reply_to_id and to:
         # Extract email address from "Name <email>" format if needed
         email_addr = to
         if '<' in to:
             email_addr = to.split('<')[1].rstrip('>')
 
-        auto_reply_id = find_latest_thread_message(service, email_addr)
-        if auto_reply_id:
-            reply_to_id = auto_reply_id
-            print(f"Auto-replying to existing thread (use --new to start fresh thread)")
+        if email_addr.lower().endswith('@kindle.com'):
+            print("Recipient is a Kindle Send-to-Kindle address; skipping auto-thread.")
+        else:
+            auto_reply_id = find_latest_thread_message(service, email_addr)
+            if auto_reply_id:
+                reply_to_id = auto_reply_id
+                print(f"Auto-replying to existing thread (use --new to start fresh thread)")
 
     # If replying to an existing message, fetch it and include quoted text
     if reply_to_id:
