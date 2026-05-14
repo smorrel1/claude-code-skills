@@ -1,6 +1,6 @@
 ---
 name: apple-notes
-description: Export Apple Notes to markdown files. Fast Python-based exporter that reads directly from the Notes SQLite database, preserving folder structure and formatting. Use when you need to search or analyze Apple Notes content.
+description: Export Apple Notes to markdown files AND edit/append to existing notes. Use when you need to search, analyze, or modify Apple Notes content.
 ---
 
 # Apple Notes Exporter
@@ -29,7 +29,7 @@ python3 scripts/export_notes.py
 python3 scripts/export_notes.py --output ~/Documents/notes-backup
 
 # Export to a Dropbox folder for cloud access
-python3 scripts/export_notes.py -o ~/Dropbox/AppleNotesExport
+python3 scripts/export_notes.py -o ~/Library/CloudStorage/Dropbox/AppleNotesExport
 ```
 
 ## Output Structure
@@ -67,4 +67,28 @@ Each exported note includes:
 - Handles gzip-compressed and protobuf-encoded note content
 - Skips notes marked for deletion
 - Skips image-only notes (e.g., "Pasted Graphic.png")
-- Duplicate filenames get numeric suffixes
+- Re-exporting overwrites previously exported files (no duplicate suffixes)
+
+## Writing Back to Apple Notes
+
+Edit existing notes directly via JXA (no skill script needed):
+
+```bash
+osascript -l JavaScript -e '
+var Notes = Application("Notes");
+var allNotes = Notes.notes();
+for (var i = 0; i < allNotes.length; i++) {
+  if (allNotes[i].name() === "NOTE TITLE HERE") {
+    var body = allNotes[i].body();
+    // body is HTML - modify with string replace, concatenation, etc.
+    // Use &amp; for &, <br> for newlines
+    allNotes[i].body = body;
+    break;
+  }
+}
+'
+```
+
+- Note bodies are **HTML**, not plain text
+- Find by `name()`, modify `body()`, assign back
+- Can also create new notes: `Notes.defaultAccount.defaultFolder.notes.push(Notes.Note({name: "Title", body: "<html>content</html>"}))`

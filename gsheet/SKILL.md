@@ -10,7 +10,7 @@ Read and write Google Sheets data using Python with OAuth credentials.
 ## Usage
 
 ```bash
-python3 scripts/read_gsheet.py <url-or-id> [options]
+python3 ~/.claude/skills/gsheet/scripts/read_gsheet.py <url-or-id> [options]
 ```
 
 ## Read Options
@@ -42,35 +42,35 @@ python3 scripts/read_gsheet.py <url-or-id> [options]
 
 ```bash
 # List all sheets
-python3 scripts/read_gsheet.py "https://docs.google.com/spreadsheets/d/SPREADSHEET_ID/edit" --list-sheets
+python3 ~/.claude/skills/gsheet/scripts/read_gsheet.py "https://docs.google.com/spreadsheets/d/SPREADSHEET_ID/edit" --list-sheets
 
 # Read first 10 rows of a specific sheet
-python3 scripts/read_gsheet.py "SPREADSHEET_ID" --sheet "Sheet1" --rows 10
+python3 ~/.claude/skills/gsheet/scripts/read_gsheet.py "SPREADSHEET_ID" --sheet "Sheet1" --rows 10
 
 # Read a specific range
-python3 scripts/read_gsheet.py "SPREADSHEET_ID" --sheet "Sheet1" --range "A1:E20"
+python3 ~/.claude/skills/gsheet/scripts/read_gsheet.py "SPREADSHEET_ID" --sheet "Sheet1" --range "A1:E20"
 
 # Find a row containing a value
-python3 scripts/read_gsheet.py "SPREADSHEET_ID" --sheet "Contacts" --find "john@example.com" --find-col D
+python3 ~/.claude/skills/gsheet/scripts/read_gsheet.py "SPREADSHEET_ID" --sheet "Contacts" --find "john@example.com" --find-col D
 
 # Output as JSON
-python3 scripts/read_gsheet.py "SPREADSHEET_ID" --format json
+python3 ~/.claude/skills/gsheet/scripts/read_gsheet.py "SPREADSHEET_ID" --format json
 ```
 
 ### Writing
 
 ```bash
 # Edit a single cell
-python3 scripts/read_gsheet.py "SPREADSHEET_ID" -s "Sheet1" --edit "B5" --value "Updated value"
+python3 ~/.claude/skills/gsheet/scripts/read_gsheet.py "SPREADSHEET_ID" -s "Sheet1" --edit "B5" --value "Updated value"
 
 # Insert a new row after row 10 with values
-python3 scripts/read_gsheet.py "SPREADSHEET_ID" -s "Sheet1" --insert-row 10 --row-values "Col1,Col2,Col3,Col4"
+python3 ~/.claude/skills/gsheet/scripts/read_gsheet.py "SPREADSHEET_ID" -s "Sheet1" --insert-row 10 --row-values "Col1,Col2,Col3,Col4"
 
 # Append a row at the end
-python3 scripts/read_gsheet.py "SPREADSHEET_ID" -s "Sheet1" --append --row-values "New,Row,Data"
+python3 ~/.claude/skills/gsheet/scripts/read_gsheet.py "SPREADSHEET_ID" -s "Sheet1" --append --row-values "New,Row,Data"
 
 # Batch update multiple cells at once
-python3 scripts/read_gsheet.py "SPREADSHEET_ID" -s "Sheet1" --batch-edit '[{"cell":"A1","value":"Hello"},{"cell":"B1","value":"World"}]'
+python3 ~/.claude/skills/gsheet/scripts/read_gsheet.py "SPREADSHEET_ID" -s "Sheet1" --batch-edit '[{"cell":"A1","value":"Hello"},{"cell":"B1","value":"World"}]'
 ```
 
 ## Notes

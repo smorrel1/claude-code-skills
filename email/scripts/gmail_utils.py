@@ -218,7 +218,7 @@ def create_message(to: str, subject: str, body: str, cc: str = None, bcc: str = 
     original = None
 
     # Check if body contains HTML tags
-    body_has_html = '<a ' in body or '<b>' in body or '<ul>' in body or '<li>' in body or '<br>' in body
+    body_has_html = '<a ' in body or '<b>' in body or '<ul>' in body or '<li>' in body or '<br>' in body or '<p>' in body or '<h' in body or '<ol>' in body or '<hr' in body or '<blockquote' in body
 
     # Auto-find prior thread if:
     # - Not explicitly starting a new thread (--new)
@@ -528,6 +528,8 @@ def search_emails(query: str, max_results: int = 10, full_content: bool = False,
             'threadId': msg_data['threadId'],
             'from': headers.get('From', 'Unknown'),
             'to': headers.get('To', ''),
+            'cc': headers.get('Cc', ''),
+            'bcc': headers.get('Bcc', ''),
             'subject': headers.get('Subject', '(No Subject)'),
             'date': headers.get('Date', ''),
             'snippet': msg_data.get('snippet', '')
@@ -540,6 +542,10 @@ def search_emails(query: str, max_results: int = 10, full_content: bool = False,
 
         print(f"ID: {email_info['id']}")
         print(f"From: {email_info['from']}")
+        if email_info.get('to'):
+            print(f"To: {email_info['to']}")
+        if email_info.get('cc'):
+            print(f"Cc: {email_info['cc']}")
         print(f"Subject: {email_info['subject']}")
         print(f"Date: {email_info['date']}")
         if full_content and email_info.get('body'):
@@ -552,26 +558,38 @@ def search_emails(query: str, max_results: int = 10, full_content: bool = False,
 
 
 def delete_draft(draft_id: str):
-    """Delete a draft email by ID."""
+    """Archive a draft by moving to trash if possible, otherwise delete it."""
     service = get_gmail_service()
 
+    def _remove_draft(actual_draft_id, message_id):
+        """Try to trash the message (preserves content), fall back to delete."""
+        try:
+            service.users().messages().trash(userId='me', id=message_id).execute()
+            print(f"Draft archived to Trash (preserved): {actual_draft_id}")
+            return True
+        except Exception:
+            # Trash requires gmail.modify scope; fall back to delete
+            service.users().drafts().delete(userId='me', id=actual_draft_id).execute()
+            print(f"Draft deleted (trash unavailable, needs gmail.modify scope): {actual_draft_id}")
+            return True
+
     try:
-        service.users().drafts().delete(userId='me', id=draft_id).execute()
-        print(f"Draft deleted successfully: {draft_id}")
-        return True
+        # Try as a draft ID first
+        draft = service.users().drafts().get(userId='me', id=draft_id).execute()
+        msg_id = draft['message']['id']
+        return _remove_draft(draft_id, msg_id)
     except Exception as e:
         # Try treating it as a message ID and finding the associated draft
         try:
             drafts = service.users().drafts().list(userId='me').execute()
             for draft in drafts.get('drafts', []):
                 if draft.get('message', {}).get('id') == draft_id:
-                    service.users().drafts().delete(userId='me', id=draft['id']).execute()
-                    print(f"Draft deleted successfully (found by message ID): {draft['id']}")
-                    return True
+                    msg_id = draft['message']['id']
+                    return _remove_draft(draft['id'], msg_id)
             print(f"No draft found with ID or message ID: {draft_id}")
             return False
         except Exception as e2:
-            print(f"Error deleting draft: {e2}")
+            print(f"Error removing draft: {e2}")
             return False
 
 
@@ -590,6 +608,10 @@ def read_email(message_id: str):
     print(f"Thread ID: {msg_data['threadId']}")
     print(f"From: {headers.get('From', 'Unknown')}")
     print(f"To: {headers.get('To', '')}")
+    if headers.get('Cc'):
+        print(f"Cc: {headers.get('Cc')}")
+    if headers.get('Bcc'):
+        print(f"Bcc: {headers.get('Bcc')}")
     print(f"Subject: {headers.get('Subject', '(No Subject)')}")
     print(f"Date: {headers.get('Date', '')}")
     print("-" * 60)
@@ -600,6 +622,8 @@ def read_email(message_id: str):
         'threadId': msg_data['threadId'],
         'from': headers.get('From', 'Unknown'),
         'to': headers.get('To', ''),
+        'cc': headers.get('Cc', ''),
+        'bcc': headers.get('Bcc', ''),
         'subject': headers.get('Subject', '(No Subject)'),
         'date': headers.get('Date', ''),
         'body': body

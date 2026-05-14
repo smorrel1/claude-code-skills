@@ -73,3 +73,6 @@ env/
 # Backup files
 *.bak
 *.backup
+
+# Zoom downloader state
+state.json

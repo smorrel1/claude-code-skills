@@ -72,6 +72,37 @@ python3 ~/.claude/skills/monthly-report/scripts/EmailsDownload.py
 
 ---
 
+## Phase 1b: Engineering Retro (Global)
+
+Before synthesizing the report, gather a cross-project engineering retrospective to include shipping velocity, LOC, contributor activity, and AI session data.
+
+### Run Global Retro
+
+Invoke `/retro global 30d` (or match the reporting period length). This scans all active git repos and AI coding sessions on the machine.
+
+### Save Retro Output
+
+Save the retro output (the full narrative, not just the JSON snapshot) to the context folder:
+
+```bash
+# After /retro global completes, save its output
+cp ~/.gstack/retros/global-$(date +%Y-%m-%d)-*.json "$CONTEXT_DIR/summaries/retro_global.json"
+```
+
+Also write the narrative summary to `$CONTEXT_DIR/summaries/retro_global_summary.md` so the synthesis agents can reference it alongside other sources.
+
+### Use in Report
+
+During Phase 4 synthesis, include the retro data as an additional source agent:
+
+| Agent | Input Source | Output |
+|-------|-------------|--------|
+| Agent (retro) | summaries/retro_global_summary.md + retro_global.json | Engineering velocity section |
+
+The board report should include a concise engineering velocity section covering: commits, LOC, active projects, contributor breakdown, AI-assisted %, and shipping streak. Use the retro's tweetable summary as the section lead-in.
+
+---
+
 ## Phase 2: Context Setup (Automated)
 
 Context folders are auto-managed:
@@ -98,11 +129,12 @@ python3 ~/.claude/skills/monthly-report/scripts/consolidate_files.py  # Uses def
 - Determine the new reporting period dates
 - Extract section headings from prior report
 
-### STOP: Confirm with User
+### STOP: Confirm Start Date and Sections with User
 Before proceeding to content generation:
-- State proposed coverage dates
+- State the proposed **start date** (derived from the prior report's end date) and **end date**
+- Ask the user to confirm or correct the start date (the prior report may not cover the full gap)
 - List provisional section headings/topics
-- **Wait for user approval before continuing**
+- **Wait for user approval of dates and sections before continuing**
 
 ---
 
@@ -161,6 +193,7 @@ Once all agents complete:
 
 **Formatting:**
 - Match prior report structure, section headings, and style
+- Include a **Table of Contents** at the front of the document (after title/metadata, before the first section)
 - Use tables/lists sparingly to support data-rich prose
 - Include executive summary
 

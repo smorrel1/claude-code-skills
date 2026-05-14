@@ -417,14 +417,6 @@ def main(output_dir=None):
         filename = f"{date_prefix}{safe_title}.md"
         filepath = note_folder / filename
 
-        # Handle duplicate filenames
-        counter = 1
-        while filepath.exists():
-            base_name = filename[:-3]
-            filename = f"{base_name}_{counter}.md"
-            filepath = note_folder / filename
-            counter += 1
-
         # Build content
         content_parts = []
         content_parts.append(f"# {title}")
