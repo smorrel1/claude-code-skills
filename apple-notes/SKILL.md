@@ -60,6 +60,22 @@ Each exported note includes:
   - Checkboxes formatted as `- [ ]` or `- [x]`
   - Short standalone lines detected as section headers
 
+## Cross-Machine Access (Dropbox)
+
+The canonical shared export lives at:
+
+| Machine | Path |
+|---------|------|
+| **macOS (source)** | `~/Library/CloudStorage/Dropbox/AppleNotesExport` |
+| **Ubuntu (mhutel)** | `~/Dropbox/AppleNotesExport` |
+
+**On macOS:** always export to the Dropbox path so Ubuntu has access:
+```bash
+python3 scripts/export_notes.py -o ~/Library/CloudStorage/Dropbox/AppleNotesExport
+```
+
+**On Ubuntu/mhutel:** read exported notes from `~/Dropbox/AppleNotesExport`. Do not attempt to run the export script on Ubuntu (no Apple Notes database). Use `grep -ril` to search notes content.
+
 ## Notes
 
 - Reads from `~/Library/Group Containers/group.com.apple.notes/NoteStore.sqlite`
