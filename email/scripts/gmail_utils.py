@@ -125,6 +125,28 @@ def get_email_for_reply(service, message_id: str):
     }
 
 
+def _html_to_plain(html: str) -> str:
+    """Convert an HTML body to a plain-text fallback for the text/plain alternative.
+
+    Preserves paragraph and list breaks; strips tags; unescapes entities.
+    Intentionally simple: no inline images, no tables, no CSS.
+    """
+    import re
+    text = html
+    # Block-level closers and <br> become newlines
+    text = re.sub(r'(?i)<\s*br\s*/?\s*>', '\n', text)
+    text = re.sub(r'(?i)</\s*(p|div|li|h[1-6]|ol|ul|blockquote|tr)\s*>', '\n', text)
+    # Opening list-item gets a bullet
+    text = re.sub(r'(?i)<\s*li[^>]*>', '- ', text)
+    # Drop all remaining tags
+    text = re.sub(r'<[^>]+>', '', text)
+    # Unescape entities (&amp;, &lt;, &nbsp; etc.)
+    text = html_module.unescape(text)
+    # Collapse 3+ consecutive newlines to two
+    text = re.sub(r'\n{3,}', '\n\n', text)
+    return text.strip()
+
+
 def format_quoted_reply(original_email: dict) -> str:
     """Format the original email as a quoted reply (plain text fallback)."""
     quoted_lines = []
@@ -165,13 +187,15 @@ def find_latest_thread_message(service, email_address: str) -> str:
     Note: Gmail's OR operator prioritizes left-side matches, so we run separate
     queries for 'from:' and 'to:' and return the most recent across both.
     """
-    # Run separate queries to avoid Gmail OR prioritization bug
+    # Run separate queries to avoid Gmail OR prioritization bug.
+    # Exclude drafts and chats: a half-written draft to this person must never
+    # become a reply target (its unsent content would leak into the quote).
     from_results = service.users().messages().list(
-        userId='me', q=f"from:{email_address}", maxResults=1
+        userId='me', q=f"from:{email_address} -in:drafts -in:chats", maxResults=1
     ).execute()
 
     to_results = service.users().messages().list(
-        userId='me', q=f"to:{email_address}", maxResults=1
+        userId='me', q=f"to:{email_address} -in:drafts -in:chats", maxResults=1
     ).execute()
 
     from_msgs = from_results.get('messages', [])
@@ -199,8 +223,94 @@ def find_latest_thread_message(service, email_address: str) -> str:
     return None
 
 
+def _extract_email(addr_header: str) -> str:
+    """Pull the first bare email address out of a From/To header value."""
+    if not addr_header:
+        return ""
+    import re
+    m = re.search(r'[\w.+-]+@[\w-]+\.[\w.-]+', addr_header)
+    return m.group(0).lower() if m else ""
+
+
+_SELF_EMAIL_CACHE = {}
+
+
+def _get_self_email(service) -> str:
+    """Return the authenticated account's own email address (cached per account)."""
+    key = CURRENT_ACCOUNT
+    if key not in _SELF_EMAIL_CACHE:
+        try:
+            prof = service.users().getProfile(userId='me').execute()
+            _SELF_EMAIL_CACHE[key] = (prof.get('emailAddress') or '').lower()
+        except Exception:
+            _SELF_EMAIL_CACHE[key] = ''
+    return _SELF_EMAIL_CACHE[key]
+
+
+def redirect_replyto_to_latest(service, reply_to_id: str) -> str:
+    """Auto-correct a stale explicit --reply-to target.
+
+    Given a reply-to message ID, find the most recent NON-DRAFT message
+    exchanged with the same correspondent (inbound OR outbound, across all
+    threads) and return that instead, so replying never lands on an old
+    message when a newer one exists. Returns the original ID unchanged if it
+    is already the latest, if the correspondent can't be determined, or for
+    Kindle addresses.
+    """
+    try:
+        meta = service.users().messages().get(
+            userId='me', id=reply_to_id, format='metadata',
+            metadataHeaders=['From', 'To', 'Subject', 'Date']
+        ).execute()
+    except Exception:
+        return reply_to_id
+
+    headers = {h['name']: h['value'] for h in meta.get('payload', {}).get('headers', [])}
+    self_email = _get_self_email(service)
+    from_email = _extract_email(headers.get('From', ''))
+    to_email = _extract_email(headers.get('To', ''))
+
+    # The correspondent is whichever party is not us.
+    if from_email and from_email != self_email:
+        correspondent = from_email
+    elif to_email and to_email != self_email:
+        correspondent = to_email
+    else:
+        correspondent = from_email or to_email
+    if not correspondent or correspondent.endswith('@kindle.com'):
+        return reply_to_id
+
+    latest_id = find_latest_thread_message(service, correspondent)
+    if not latest_id or latest_id == reply_to_id:
+        return reply_to_id
+
+    try:
+        old_d = int(meta.get('internalDate', 0))
+        new_meta = service.users().messages().get(
+            userId='me', id=latest_id, format='metadata',
+            metadataHeaders=['Subject', 'Date']
+        ).execute()
+        new_d = int(new_meta.get('internalDate', 0))
+    except Exception:
+        return reply_to_id
+
+    if new_d <= old_d:
+        return reply_to_id
+
+    nh = {h['name']: h['value'] for h in new_meta.get('payload', {}).get('headers', [])}
+    print(
+        "Note: --reply-to pointed at an older message ("
+        f"\"{headers.get('Subject', '')}\", {headers.get('Date', '')}). "
+        f"Redirecting to the most recent traffic with {correspondent} ("
+        f"\"{nh.get('Subject', '')}\", {nh.get('Date', '')}). "
+        "Pass --keep-thread (force_thread=True) to reply in the original thread instead."
+    )
+    return latest_id
+
+
 def create_message(to: str, subject: str, body: str, cc: str = None, bcc: str = None,
-                   reply_to_id: str = None, new_thread: bool = False, attachments: list = None):
+                   reply_to_id: str = None, new_thread: bool = False, attachments: list = None,
+                   force_thread: bool = False):
     """Create an email message, automatically replying to existing thread unless --new is specified.
 
     Args:
@@ -241,6 +351,12 @@ def create_message(to: str, subject: str, body: str, cc: str = None, bcc: str = 
                 reply_to_id = auto_reply_id
                 print(f"Auto-replying to existing thread (use --new to start fresh thread)")
 
+    # An explicitly supplied reply-to may be stale (an old message in an old
+    # thread). Unless the caller forces the original thread or wants a new one,
+    # redirect to the most recent non-draft traffic with the same correspondent.
+    if reply_to_id and not new_thread and not force_thread:
+        reply_to_id = redirect_replyto_to_latest(service, reply_to_id)
+
     # If replying to an existing message, fetch it and include quoted text
     if reply_to_id:
         original = get_email_for_reply(service, reply_to_id)
@@ -249,14 +365,26 @@ def create_message(to: str, subject: str, body: str, cc: str = None, bcc: str = 
         references = f"{original['references']} {original['message_id']}".strip()
         use_html = True  # Use HTML for replies to preserve formatting
 
-        # Use original sender as recipient if not specified
+        # Use original sender as recipient if not specified.
+        # Special case: if the reply target is a message WE sent (From == self),
+        # using From: would address the reply back to ourselves. This happens when
+        # the stale-reply redirect lands on our own most recent outbound to a
+        # correspondent — including SENT-labeled stubs left behind by drafts that
+        # were deleted via the API. Mirror Gmail's "Reply" behaviour on a sent
+        # message: use the original To: header (the actual correspondent) instead.
         if not to:
-            # Extract email from "Name <email>" format
             from_addr = original['from']
-            if '<' in from_addr:
-                to = from_addr.split('<')[1].rstrip('>')
+            from_email = _extract_email(from_addr)
+            self_email = _get_self_email(service)
+            if from_email and self_email and from_email == self_email and original.get('to'):
+                source_addr = original['to']
             else:
-                to = from_addr
+                source_addr = from_addr
+            # Extract email from "Name <email>" format
+            if '<' in source_addr:
+                to = source_addr.split('<')[1].rstrip('>')
+            else:
+                to = source_addr
 
         # Ensure subject has Re: prefix
         if not subject.lower().startswith('re:'):
@@ -279,8 +407,10 @@ def create_message(to: str, subject: str, body: str, cc: str = None, bcc: str = 
         # Create multipart message with both HTML and plain text
         body_part = MIMEMultipart('alternative')
 
-        # Plain text version (fallback)
-        plain_body = body + format_quoted_reply(original)
+        # Plain text version (fallback) — strip HTML so Exchange/Outlook clients
+        # that fall back to text/plain don't see raw <p>/<ol>/<li> tags.
+        plain_text_body = _html_to_plain(body) if body_has_html else body
+        plain_body = plain_text_body + format_quoted_reply(original)
         part_plain = MIMEText(plain_body, 'plain')
         body_part.attach(part_plain)
 
@@ -294,9 +424,8 @@ def create_message(to: str, subject: str, body: str, cc: str = None, bcc: str = 
         # Create multipart message with both HTML and plain text
         body_part = MIMEMultipart('alternative')
 
-        # Plain text version (strip HTML tags for fallback)
-        import re
-        plain_body = re.sub(r'<[^>]+>', '', body)
+        # Plain text version (strip HTML tags for fallback, preserve list/paragraph breaks)
+        plain_body = _html_to_plain(body)
         part_plain = MIMEText(plain_body, 'plain')
         body_part.attach(part_plain)
 
@@ -354,11 +483,12 @@ def create_message(to: str, subject: str, body: str, cc: str = None, bcc: str = 
 
 
 def create_draft(to: str, subject: str, body: str, cc: str = None, bcc: str = None,
-                 reply_to_id: str = None, new_thread: bool = False, attachments: list = None):
+                 reply_to_id: str = None, new_thread: bool = False, attachments: list = None,
+                 force_thread: bool = False):
     """Create a draft email."""
     service = get_gmail_service()
     raw, thread_id, to, subject, reply_to_id = create_message(
-        to, subject, body, cc, bcc, reply_to_id, new_thread, attachments
+        to, subject, body, cc, bcc, reply_to_id, new_thread, attachments, force_thread
     )
 
     draft_body = {'message': {'raw': raw}}
@@ -376,11 +506,12 @@ def create_draft(to: str, subject: str, body: str, cc: str = None, bcc: str = No
 
 
 def send_email(to: str, subject: str, body: str, cc: str = None, bcc: str = None,
-               reply_to_id: str = None, new_thread: bool = False, attachments: list = None):
+               reply_to_id: str = None, new_thread: bool = False, attachments: list = None,
+               force_thread: bool = False):
     """Send an email directly (not as draft)."""
     service = get_gmail_service()
     raw, thread_id, to, subject, reply_to_id = create_message(
-        to, subject, body, cc, bcc, reply_to_id, new_thread, attachments
+        to, subject, body, cc, bcc, reply_to_id, new_thread, attachments, force_thread
     )
 
     message_body = {'raw': raw}
@@ -646,6 +777,8 @@ def main():
     draft_parser.add_argument('--bcc', help='BCC recipients (comma-separated)')
     draft_parser.add_argument('--reply-to', dest='reply_to', help='Message ID to reply to (includes thread)')
     draft_parser.add_argument('--new', action='store_true', help='Start a new thread (skip auto-reply to existing thread)')
+    draft_parser.add_argument('--keep-thread', dest='keep_thread', action='store_true',
+                              help='Reply in the exact --reply-to thread even if newer traffic with the contact exists (disables stale-reply auto-redirect)')
     draft_parser.add_argument('--attach', action='append', dest='attachments', metavar='FILE',
                              help='Attach a file (can be used multiple times)')
 
@@ -658,6 +791,8 @@ def main():
     send_parser.add_argument('--bcc', help='BCC recipients (comma-separated)')
     send_parser.add_argument('--reply-to', dest='reply_to', help='Message ID to reply to (includes thread)')
     send_parser.add_argument('--new', action='store_true', help='Start a new thread (skip auto-reply to existing thread)')
+    send_parser.add_argument('--keep-thread', dest='keep_thread', action='store_true',
+                             help='Reply in the exact --reply-to thread even if newer traffic with the contact exists (disables stale-reply auto-redirect)')
     send_parser.add_argument('--attach', action='append', dest='attachments', metavar='FILE',
                              help='Attach a file (can be used multiple times)')
 
@@ -694,13 +829,13 @@ def main():
             if not args.to and not args.reply_to:
                 print("Error: --to is required unless using --reply-to", file=sys.stderr)
                 sys.exit(1)
-            create_draft(args.to, args.subject or '', args.body, args.cc, args.bcc, args.reply_to, args.new, args.attachments)
+            create_draft(args.to, args.subject or '', args.body, args.cc, args.bcc, args.reply_to, args.new, args.attachments, getattr(args, 'keep_thread', False))
         elif args.command == 'send':
             # Validate: need either --to or --reply-to
             if not args.to and not args.reply_to:
                 print("Error: --to is required unless using --reply-to", file=sys.stderr)
                 sys.exit(1)
-            send_email(args.to, args.subject or '', args.body, args.cc, args.bcc, args.reply_to, args.new, args.attachments)
+            send_email(args.to, args.subject or '', args.body, args.cc, args.bcc, args.reply_to, args.new, args.attachments, getattr(args, 'keep_thread', False))
         elif args.command == 'search':
             if not args.query and not args.with_person:
                 print("Error: Either --query or --with is required", file=sys.stderr)

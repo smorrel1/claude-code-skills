@@ -207,9 +207,10 @@ python3 ~/.claude/skills/email/scripts/gmail_utils.py draft --to "recipient@exam
 | `--body` | Email body in HTML format (required) |
 | `--cc` | CC recipients (comma-separated) |
 | `--bcc` | BCC recipients (comma-separated) |
-| `--reply-to` | Message ID to reply to (includes quoted thread). **CRITICAL: The "To" field is auto-filled from the original message's "From" field. If you reply to a message the user SENT (where user is the sender), the reply will be addressed back to the user, not to the original recipient. Always reply to messages FROM the intended recipient, or explicitly pass `--to` to override.** |
+| `--reply-to` | Message ID to reply to (includes quoted thread). The "To" field is auto-filled from the original message's "From" field, **except** when replying to a message the user SENT (From == self): in that case the skill mirrors Gmail's Reply button and addresses the original recipient (the message's "To" header) instead of the user. You can still pass `--to` to override. **STALE-REPLY AUTO-REDIRECT: if the `--reply-to` message is not the most recent non-draft message exchanged with that correspondent, the skill automatically redirects the reply to the latest in/out message with them (newest thread, correct subject) and prints a "Redirecting..." notice. This means you cannot accidentally bury a reply in an old thread. Drafts are never chosen as the target; note that a draft deleted via the API leaves a SENT-labelled stub, which the redirect may select — the From==self To-fix above ensures such a stub still resolves the correct recipient.** |
 | `--attach` | File path to attach (can be used multiple times for multiple files) |
 | `--new` | Start new thread instead of auto-replying to existing |
+| `--keep-thread` | Disable the stale-reply auto-redirect: reply in the exact `--reply-to` thread even if newer traffic with the contact exists. Use only when deliberately reviving a specific older thread. |
 
 **Note:** `--account` is a global option that must come before the command (see Usage above).
 
@@ -269,7 +270,10 @@ python3 ~/.claude/skills/email/scripts/gmail_utils.py delete-draft --id "draft_i
 **Reply threading guidance:**
 - Default to `--reply-to` with the message ID when replying to existing conversations
 - This ensures proper threading and includes the quoted email chain automatically
+- **You do not need to hunt for the latest message yourself.** The skill auto-redirects any `--reply-to` to the most recent non-draft message with that correspondent, so a reply always lands on the live conversation even if you pass an older message ID. The simplest reliable pattern is `draft --to <person>` (no `--reply-to`): it threads onto their newest in/out message automatically. Watch for the "Redirecting..." notice to confirm where the reply landed.
+- **CRITICAL: Auto-redirect picks the most recent message with the RECIPIENT, not the most recent message in the intended THREAD.** When a person appears in multiple threads (e.g. as a CC on one thread and as the primary recipient on another), auto-redirect may land on the wrong thread. **When replying to a specific message in a specific thread, always use `--reply-to <message_id> --keep-thread`** to force the reply into the correct thread. This is especially important when the person is CC'd on other recent conversations.
 - Use `--new` when the user specifies starting a fresh thread, or when clearly starting an unrelated conversation
+- Use `--keep-thread` only to deliberately reply inside a specific older thread (e.g. continuing a distinct sub-topic) when newer unrelated traffic with the contact exists, **OR when replying to a specific message and you need to prevent auto-redirect from landing on the wrong thread**
 - **`@kindle.com` recipients are auto-detected and never threaded** — Amazon ingests each Send-to-Kindle email independently, and threaded replies render as "Re: (No Subject)" in the Gmail Sent folder. The skill skips the auto-thread lookup whenever the recipient address ends in `@kindle.com`.
 
 ## Send-to-Kindle Workflow
