@@ -30,6 +30,8 @@ Download transcripts from YouTube or X.com, clean them with AI, and send to Kind
 | YouTube | `youtube.com/watch?v=...`, `youtu.be/...` | Subtitle extraction (SRT) |
 | X.com / Twitter | `x.com/.../status/...`, `twitter.com/...` | Subtitles if available, otherwise audio download + whisper.cpp transcription |
 
+**Spotify / Apple Podcasts / audio-only links are NOT directly supported** (no caption extraction). When given one, find the YouTube equivalent first: WebSearch `"<podcast name> #<episode number> <guest> YouTube full episode"`, then use that YouTube URL. Most major podcasts (e.g. JRE) publish full episodes on YouTube with auto-captions.
+
 ## Usage
 
 ### Step 1: Download the transcript
@@ -89,6 +91,12 @@ The haiku agent should:
 4. **Write** the structured version with ONE Write tool call
 
 **Why haiku does this better than the script:** The mechanical `--clean` step handles pattern-based fixes (filler words, duplicates). But contextual errors like "quad code" (should be "Claude Code") or missing punctuation require understanding the meaning, which only the LLM can do.
+
+**LONG TRANSCRIPTS (CRITICAL; >~60KB cleaned, i.e. episodes longer than ~1hr):** A single haiku agent given a long transcript will **summarize and silently drop content** instead of cleaning verbatim. (Observed: a 232KB / 3.5hr transcript came back at 52-81% of input size when processed in one or four large pieces, i.e. up to half the conversation lost.) To avoid this:
+1. **Split into ~25-30KB chunks** on paragraph boundaries (smaller chunks resist compression; ~58KB chunks still summarized, ~29KB chunks did not).
+2. **Run one parallel haiku agent per chunk**, each writing to its own `chunk_N_structured.txt`. Tell each agent explicitly: "verbatim cleanup, NOT a summary; reproduce EVERY sentence; output must be ≈ the same length as input or longer."
+3. **VERIFY each output is ≥90% of its input char count** (`wc -c`). Agents' self-reported counts are unreliable, so measure the files on disk. Re-run any undersized chunk at a smaller split size.
+4. **Concatenate the verified chunks in order** before the EPUB step. Do NOT add a `# ` top-level title inside chunks; only `## ` section headers (these become the TOC).
 
 ### Step 4: Convert to EPUB with cover
 
