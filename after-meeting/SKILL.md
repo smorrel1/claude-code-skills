@@ -74,20 +74,20 @@ If a time argument was given (e.g., "10am"), match folder names containing that 
 #### 3b. Fireflies Transcripts (Dropbox)
 
 ```
-~/Library/CloudStorage/Dropbox/sm_elaitra/agendas_minutes_firef/
+~/Library/CloudStorage/Dropbox/sm_elaitra/transcripts/
 ```
 
 Files are named `YYYY-MM-DD_Meeting Title.txt`. Search:
 
 ```bash
 TODAY_DASH=$(date +%Y-%m-%d)
-ls ~/Library/CloudStorage/Dropbox/sm_elaitra/agendas_minutes_firef/ | grep "^$TODAY_DASH"
+ls ~/Library/CloudStorage/Dropbox/sm_elaitra/transcripts/ | grep "^$TODAY_DASH"
 ```
 
 Also search by attendee name if date search returns nothing:
 
 ```bash
-grep -ril "Jorge" ~/Library/CloudStorage/Dropbox/sm_elaitra/agendas_minutes_firef/ | grep "$TODAY_DASH"
+grep -ril "Jorge" ~/Library/CloudStorage/Dropbox/sm_elaitra/transcripts/ | grep "$TODAY_DASH"
 ```
 
 #### 3c. Zoom Docs (docs.zoom.us)
@@ -230,7 +230,22 @@ For each action item assigned to Stephen that involves an external person, or an
 3. Apply Stephen's email style: no em dashes, warm and professional, contractions OK, no exclamation marks.
 4. If the recipient is a sales prospect, follow the ViewFinder cold outreach style from the CLAUDE.md Sales Playbook.
 
-Ask Stephen to review and send each draft rather than sending automatically.
+**Email drafting rules:**
+- **Always save as a Gmail draft** using the email skill. Never just display email text in the conversation without saving it.
+- **Pin commitments to specific deadlines.** If someone promised something in the meeting, the email must state what they promised and by when (use "today", "by Monday", "by EOD Friday", not vague language like "when you can").
+- **Frame around demo.elaitra.com** for sales/deployment emails. The cloud demo removes IT infrastructure, governance, and installation blockers. Radiologists experiencing the value themselves is the fastest path to commercial deployment.
+- **Request same-day escalation** for remaining blockers: "If any blockers remain, please surface them to me same day so I can help unblock."
+- **Don't just acknowledge problems** (e.g., "I know sales cycles are long"). Always follow with a concrete countermeasure (e.g., "we compensate by getting radiologists to experience the value themselves immediately via demo.elaitra.com").
+- **CC relevant stakeholders.** Search sent emails (`in:sent`) to the same person/org from the last 7 days to find who else was on the thread. Match the CC list.
+- **Use `--new` flag** when starting a new topic. Use `--reply-to` only when continuing an existing thread. Never auto-thread onto unrelated conversations.
+
+### Step 7b — Print Meeting Feedback
+
+After drafting emails, print to the terminal (not the Apple Note) an honest assessment of how Stephen could have done better in the meeting. Be specific, reference actual moments from the transcript. Cover:
+- Where he was too vague when he should have been specific
+- Where he let the other party deflect without pinning a commitment
+- Where he spent too long on a topic vs moving on
+- Tactical improvements for next time
 
 ### Step 8 — Save Transcript to Google Drive
 
@@ -240,7 +255,9 @@ Save the transcript as a markdown file to the shared Google Drive agendas-minute
 ~/Library/CloudStorage/GoogleDrive-stephen.morrell@elaitra.com/Shared drives/Elaitra_gc/agendas-minutes-notes/
 ```
 
-File naming convention: `YYYY-MM-DD_Meeting Title.md`
+File naming convention: `YYYYMMDD-HHMM-Zoom-Person-Context.md` (e.g., `20260514-1109-Zoom-Mahima-Carpl.md`)
+
+**Do NOT include company names that could be confused** (e.g., use "Carpl" not "Ferrum" if the person works at Carpl Health).
 
 If the Zoom downloader already saved the file there (Step 3c), confirm it exists and skip re-saving. Otherwise write the file using the Read/Write tools.
 
@@ -281,7 +298,7 @@ When done, confirm each completed item:
 | Apple Notes export script | `~/.claude/skills/apple-notes/scripts/export_notes.py` |
 | Apple Notes export output | `~/Desktop/AppleNotesExport/` |
 | Zoom local recordings | `~/Documents/Zoom/` |
-| Fireflies transcripts | `~/Library/CloudStorage/Dropbox/sm_elaitra/agendas_minutes_firef/` |
+| Transcripts (Fireflies + Zoom) | `~/Library/CloudStorage/Dropbox/sm_elaitra/transcripts/` |
 | Zoom Docs downloader | `~/git/zoom_downloader/zoom_notes_downloader.py` |
 | Google Drive agendas folder | `~/Library/CloudStorage/GoogleDrive-stephen.morrell@elaitra.com/Shared drives/Elaitra_gc/agendas-minutes-notes/` |
 
