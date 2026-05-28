@@ -147,6 +147,52 @@ def _html_to_plain(html: str) -> str:
     return text.strip()
 
 
+def validate_attachment_integrity(filepath: str, data: bytes) -> str:
+    """Sanity-check an attachment's bytes before sending.
+
+    Returns None if the file looks intact, or a human-readable reason string
+    if it looks corrupt/truncated. Currently validates PDFs (the format that
+    bit us: a PDF emailed mid-write is missing its trailer/xref/%%EOF and is
+    unopenable by strict readers like Outlook/NHSmail, even though `file` and
+    macOS Preview may still render it). Non-PDF types pass through.
+    """
+    lower = filepath.lower()
+    is_pdf = lower.endswith('.pdf') or data[:5] == b'%PDF-'
+    if not is_pdf:
+        return None
+    if data[:5] != b'%PDF-':
+        return f"{os.path.basename(filepath)}: missing %PDF- header (not a valid PDF)"
+    # A complete PDF ends with %%EOF; the spec tolerates a little trailing
+    # whitespace/junk, so search the tail rather than the very last bytes.
+    tail = data[-2048:]
+    if b'%%EOF' not in tail:
+        return (f"{os.path.basename(filepath)}: truncated PDF (no %%EOF marker "
+                f"in the final bytes, {len(data)} bytes total). The file was "
+                f"likely attached before it finished being written/exported. "
+                f"Re-export or wait for the source to finish, then retry.")
+    if b'startxref' not in tail:
+        return (f"{os.path.basename(filepath)}: truncated PDF, missing "
+                f"cross-reference table (no 'startxref' near end). Re-export the file.")
+    # Stronger check when poppler's pdfinfo is available: it parses the xref
+    # table and page tree, catching corruption that a tail %%EOF scan misses.
+    # Best-effort only, skipped silently if pdfinfo isn't installed.
+    import shutil, subprocess
+    pdfinfo = shutil.which('pdfinfo')
+    if pdfinfo:
+        try:
+            proc = subprocess.run([pdfinfo, filepath], capture_output=True,
+                                  text=True, timeout=20)
+            if proc.returncode != 0 or 'Pages:' not in proc.stdout:
+                err = (proc.stderr or proc.stdout or 'unknown error').strip().splitlines()
+                reason = err[0] if err else 'pdfinfo could not parse the file'
+                return (f"{os.path.basename(filepath)}: PDF failed structural "
+                        f"validation ({reason}). The file is corrupt or incomplete; "
+                        f"re-export it.")
+        except (subprocess.TimeoutExpired, OSError):
+            pass  # don't block sending on a flaky/missing validator
+    return None
+
+
 def format_quoted_reply(original_email: dict) -> str:
     """Format the original email as a quoted reply (plain text fallback)."""
     quoted_lines = []
@@ -457,12 +503,18 @@ def create_message(to: str, subject: str, body: str, cc: str = None, bcc: str = 
             with open(filepath, 'rb') as f:
                 attachment_data = f.read()
 
+            # Integrity guard: never email a truncated/corrupt attachment.
+            # Raising aborts draft/send so the problem is loud, not silent.
+            problem = validate_attachment_integrity(filepath, attachment_data)
+            if problem:
+                raise RuntimeError(f"Refusing to attach corrupt file. {problem}")
+
             attachment = MIMEBase(maintype, subtype)
             attachment.set_payload(attachment_data)
             encoders.encode_base64(attachment)
             attachment.add_header('Content-Disposition', 'attachment', filename=filename)
             message.attach(attachment)
-            print(f"Attached: {filename}")
+            print(f"Attached: {filename} ({len(attachment_data)} bytes, integrity OK)")
     else:
         message = body_part
 
