@@ -6,6 +6,7 @@ Tests that subprocess.run is called with correct arguments instead of os.system.
 
 import subprocess
 import unittest
+from pathlib import Path
 from unittest.mock import patch, MagicMock
 
 
@@ -53,7 +54,8 @@ class TestSubprocessFix(unittest.TestCase):
 
     def test_no_os_system_in_source(self):
         """Verify os.system is no longer used in the source file."""
-        with open('/Users/stephenmorrell/.claude/skills/monthly-report/scripts/fireflies_transcript.py', 'r') as f:
+        source_path = Path.home() / '.claude/skills/monthly-report/scripts/fireflies_transcript.py'
+        with open(source_path, 'r') as f:
             content = f.read()
 
         # Check that os.system( is not in the file

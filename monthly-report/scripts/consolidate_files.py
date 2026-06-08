@@ -46,6 +46,112 @@ except ImportError:
     MINUTES_DIRS = []
     FIREFLIES_DIR = None
 
+def consolidate_apple_notes(folder_path, start_date, output_path, output_filename='consolidated_notes.txt'):
+    """
+    Consolidate Apple Notes that were CREATED or LAST EDITED on or after start_date.
+
+    Apple Notes exported via the apple-notes skill are named:
+        YYYYMMDD-<title>.md      (date prefix = note's original creation date)
+
+    The export script re-touches every note's mtime each run, so filesystem mtime
+    is meaningless. We therefore filter on the leading YYYYMMDD in the filename,
+    plus parse any inline "Updated: YYYY-MM-DD" / "Modified: YYYY-MM-DD" lines
+    in the note body to catch notes whose ORIGINAL date is older but were edited
+    in the current reporting period.
+
+    Args:
+        folder_path (str): Apple Notes export directory
+        start_date (datetime): only include notes with creation OR edit date >= start_date
+        output_path (str): output directory (with trailing slash)
+        output_filename (str): output filename
+    """
+    import re
+    folder = pathlib.Path(folder_path)
+    output_file_path = pathlib.Path(output_path) / output_filename
+
+    date_re = re.compile(r"^(\d{8})-")
+    edit_re = re.compile(
+        r"^(?:Updated|Modified|Last\s+edit(?:ed)?|Edited)[:\s]+(\d{4}[-/]\d{2}[-/]\d{2})",
+        re.IGNORECASE | re.MULTILINE,
+    )
+
+    kept = []
+    skipped_old = 0
+    skipped_unparseable = 0
+
+    for file_path in folder.glob("**/*.md"):
+        if not file_path.is_file():
+            continue
+
+        m = date_re.match(file_path.name)
+        created_in_period = False
+        edited_in_period = False
+
+        if m:
+            try:
+                created = datetime.strptime(m.group(1), "%Y%m%d")
+                if created >= start_date:
+                    created_in_period = True
+            except ValueError:
+                pass
+
+        # If filename date isn't in period, scan the body for an Updated/Modified line.
+        # This catches old notes edited recently. Cheap: only read body if needed.
+        if not created_in_period:
+            try:
+                with open(file_path, "r", encoding="utf-8", errors="ignore") as fh:
+                    body = fh.read(4096)  # first 4 KB is enough for header metadata
+                for em in edit_re.finditer(body):
+                    try:
+                        edit_dt = datetime.strptime(
+                            em.group(1).replace("/", "-"), "%Y-%m-%d"
+                        )
+                        if edit_dt >= start_date:
+                            edited_in_period = True
+                            break
+                    except ValueError:
+                        continue
+            except Exception:
+                pass
+
+        if not (created_in_period or edited_in_period):
+            if m:
+                skipped_old += 1
+            else:
+                skipped_unparseable += 1
+            continue
+
+        try:
+            with open(file_path, "r", encoding="utf-8", errors="ignore") as fh:
+                raw_content = fh.read()
+            cleaned_content = detect_and_clean_content(raw_content) or raw_content[:500]
+
+            tag = "created" if created_in_period else "edited"
+            header = f"File: {file_path.name}\nIn-period via: {tag}"
+            kept.append(header)
+            kept.append(cleaned_content)
+            kept.append("-" * 50)
+        except Exception as e:
+            print(f"Error reading note {file_path}: {e}")
+
+    if kept:
+        try:
+            with open(output_file_path, "w", encoding="utf-8", errors="replace") as out:
+                out.write("\n\n".join(kept))
+            print(
+                f"Successfully consolidated {len(kept)//3} Apple Notes "
+                f"(skipped {skipped_old} out-of-period, {skipped_unparseable} unparseable) "
+                f"into: {output_file_path}"
+            )
+        except Exception as e:
+            print(f"Error writing Apple Notes consolidation: {e}")
+    else:
+        print(
+            f"No Apple Notes in-period (skipped {skipped_old} out-of-period, "
+            f"{skipped_unparseable} unparseable filename)."
+        )
+
+
 def consolidate_files(folder_path, start_date, output_path, output_filename='consolidated_files.txt'):
     """
     Consolidate files modified after the start date into a single file.
@@ -211,11 +317,20 @@ def run_consolidation(start_date=None, skip_stash=False):
 
     output_path_str = str(output_path) + "/"
 
-    # Notes - check AppleNotesExport first (from apple-notes skill)
+    # Notes - check AppleNotesExport first (from apple-notes skill).
+    # Use the dedicated Apple Notes filter: the export re-touches every note's
+    # mtime each run, so we filter on the YYYYMMDD- filename prefix plus any
+    # "Updated: ..." line in the note body. Generic mtime filtering would
+    # include all 2,000+ notes ever taken.
     notes_found = False
     if APPLE_NOTES_EXPORT.exists():
-        print(f"Consolidating notes from AppleNotesExport: {APPLE_NOTES_EXPORT}")
-        consolidate_files(str(APPLE_NOTES_EXPORT), start_date, output_path_str, output_filename=f"consolidated_notes_{date_str}.txt")
+        print(f"Consolidating Apple Notes (filename-date filter) from: {APPLE_NOTES_EXPORT}")
+        consolidate_apple_notes(
+            str(APPLE_NOTES_EXPORT),
+            start_date,
+            output_path_str,
+            output_filename=f"consolidated_notes_{date_str}.txt",
+        )
         notes_found = True
 
     if not notes_found:

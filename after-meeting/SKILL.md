@@ -10,10 +10,10 @@ Automate everything that happens after a meeting ends: find the notes and transc
 ## Trigger
 
 ```
-/after-meeting Jorge
+/after-meeting Alice
 /after-meeting 10am
 /after-meeting with Sally
-/after-meeting David Bodne 2pm
+/after-meeting Bob Smith 2pm
 ```
 
 Arguments can be a person's name, a time, or both. All are used to locate the correct meeting.
@@ -44,10 +44,10 @@ TODAY=$(date +%Y%m%d)
 find ~/Desktop/AppleNotesExport -name "${TODAY}-*.md" | head -20
 
 # Also search note bodies for the attendee name
-grep -ril "Jorge" ~/Desktop/AppleNotesExport --include="*.md" | grep "$TODAY"
+grep -ril "Alice" ~/Desktop/AppleNotesExport --include="*.md" | grep "$TODAY"
 ```
 
-If multiple notes match, show the list and ask Stephen to confirm which one.
+If multiple notes match, show the list and ask the user to confirm which one.
 
 Note titles typically follow the format: `YYYYMMDD-Person Name.md` or `YYYYMMDD-Meeting Topic.md`
 
@@ -74,45 +74,36 @@ If a time argument was given (e.g., "10am"), match folder names containing that 
 #### 3b. Fireflies Transcripts (Dropbox)
 
 ```
-~/Library/CloudStorage/Dropbox/sm_elaitra/transcripts/
+~/Library/CloudStorage/Dropbox/<your-work-folder>/transcripts/
 ```
 
 Files are named `YYYY-MM-DD_Meeting Title.txt`. Search:
 
 ```bash
 TODAY_DASH=$(date +%Y-%m-%d)
-ls ~/Library/CloudStorage/Dropbox/sm_elaitra/transcripts/ | grep "^$TODAY_DASH"
+ls ~/Library/CloudStorage/Dropbox/<your-work-folder>/transcripts/ | grep "^$TODAY_DASH"
 ```
 
 Also search by attendee name if date search returns nothing:
 
 ```bash
-grep -ril "Jorge" ~/Library/CloudStorage/Dropbox/sm_elaitra/transcripts/ | grep "$TODAY_DASH"
+grep -ril "Alice" ~/Library/CloudStorage/Dropbox/<your-work-folder>/transcripts/ | grep "$TODAY_DASH"
 ```
 
 #### 3c. Zoom Docs (docs.zoom.us)
 
 The `zoom_notes_downloader.py` script at `~/git/zoom_downloader/zoom_notes_downloader.py` can pull transcripts from Zoom Docs.
 
-**Important constraint:** This script uses Selenium with the Chrome user profile and requires Chrome to be fully closed before running (exclusive profile access). If Chrome is open, the script will fail.
+**Known limitation (May 2026):** The zoom_notes_downloader.py script cannot currently authenticate on docs.zoom.us. Chrome 148+ blocks CDP on the default profile, and Zoom stores auth cookies as session-only (in-memory), making cookie extraction impossible. See the zoom-downloader skill for full details.
 
-Options when Chrome is open:
-1. Ask Stephen: "Chrome is open. Should I close it to run the Zoom downloader, or would you prefer I open docs.zoom.us in the browser for you to find the transcript manually?"
-2. Alternatively, use the `agent-browse` skill to navigate to `https://docs.zoom.us/recent` and locate today's meeting note.
+**Working alternatives:**
+1. Use `claude-in-chrome` MCP tools to navigate `https://docs.zoom.us/recent` from within the live Chrome session and extract the transcript via JavaScript
+2. Ask the user to open docs.zoom.us and copy the transcript manually
 
-If Chrome is closed or Stephen agrees to close it:
-
-```bash
-cd ~/git/zoom_downloader
-python3 zoom_notes_downloader.py
+If the script is ever fixed, output goes to:
 ```
-
-The script saves transcripts to:
+~/Library/CloudStorage/Dropbox/<your-work-folder>/transcripts/
 ```
-~/Library/CloudStorage/GoogleDrive-stephen.morrell@elaitra.com/Shared drives/Elaitra_gc/agendas-minutes-notes/
-```
-
-If the script ran successfully and saved a file there for today, use that file as the transcript.
 
 #### Transcript Priority
 
@@ -123,7 +114,7 @@ Use whichever source has the most complete content:
 
 ### Step 4 — Generate the Meeting Summary
 
-Read the Apple Note and transcript content, then produce a structured summary. Follow Stephen's writing preferences: no em dashes, warm and clear tone.
+Read the Apple Note and transcript content, then produce a structured summary. Follow the user's writing preferences (e.g. no em dashes, warm and clear tone).
 
 **Summary structure (use HTML for Apple Notes body):**
 
@@ -142,7 +133,7 @@ Read the Apple Note and transcript content, then produce a structured summary. F
 </ul>
 
 <h3>Follow-Up Actions</h3>
-<b>Stephen:</b>
+<b>[You]:</b>
 <ul>
   <li>[Action 1]</li>
 </ul>
@@ -196,7 +187,7 @@ APPLESCRIPT
 - Use `<ul><li>...</li></ul>` for bullet lists
 - Escape any `&` as `&amp;` and `"` carefully within AppleScript strings
 
-If the note title is ambiguous or not found, show a list of today's notes and ask Stephen to confirm the exact title.
+If the note title is ambiguous or not found, show a list of today's notes and ask the user to confirm the exact title.
 
 ### Step 6 — Append Transcript to Apple Note
 
@@ -223,28 +214,28 @@ For the link-only case:
 
 ### Step 7 — Draft Follow-Up Emails
 
-For each action item assigned to Stephen that involves an external person, or any explicit "send email" action items from the transcript:
+For each action item assigned to the user that involves an external person, or any explicit "send email" action items from the transcript:
 
 1. Load the `email` skill.
-2. Draft using the `elaitra` account by default (or whichever account is contextually appropriate).
-3. Apply Stephen's email style: no em dashes, warm and professional, contractions OK, no exclamation marks.
-4. If the recipient is a sales prospect, follow the ViewFinder cold outreach style from the CLAUDE.md Sales Playbook.
+2. Draft using the user's primary work account by default (or whichever account is contextually appropriate).
+3. Apply the user's email style preferences from their CLAUDE.md or config (e.g. no em dashes, warm and professional, contractions OK, no exclamation marks).
+4. If the recipient is a sales prospect, follow whatever cold outreach style is described in the user's CLAUDE.md Sales Playbook.
 
 **Email drafting rules:**
 - **Always save as a Gmail draft** using the email skill. Never just display email text in the conversation without saving it.
 - **Pin commitments to specific deadlines.** If someone promised something in the meeting, the email must state what they promised and by when (use "today", "by Monday", "by EOD Friday", not vague language like "when you can").
-- **Frame around demo.elaitra.com** for sales/deployment emails. The cloud demo removes IT infrastructure, governance, and installation blockers. Radiologists experiencing the value themselves is the fastest path to commercial deployment.
+- **Frame around the user's primary value proposition** for sales/deployment emails (see CLAUDE.md for product-specific framing).
 - **Request same-day escalation** for remaining blockers: "If any blockers remain, please surface them to me same day so I can help unblock."
-- **Don't just acknowledge problems** (e.g., "I know sales cycles are long"). Always follow with a concrete countermeasure (e.g., "we compensate by getting radiologists to experience the value themselves immediately via demo.elaitra.com").
+- **Don't just acknowledge problems** (e.g., "I know sales cycles are long"). Always follow with a concrete countermeasure.
 - **CC relevant stakeholders.** Search sent emails (`in:sent`) to the same person/org from the last 7 days to find who else was on the thread. Match the CC list.
 - **Use `--new` flag** when starting a new topic. Use `--reply-to` only when continuing an existing thread. Never auto-thread onto unrelated conversations.
 
 ### Step 7b — Print Meeting Feedback
 
-After drafting emails, print to the terminal (not the Apple Note) an honest assessment of how Stephen could have done better in the meeting. Be specific, reference actual moments from the transcript. Cover:
-- Where he was too vague when he should have been specific
-- Where he let the other party deflect without pinning a commitment
-- Where he spent too long on a topic vs moving on
+After drafting emails, print to the terminal (not the Apple Note) an honest assessment of how the user could have done better in the meeting. Be specific, reference actual moments from the transcript. Cover:
+- Where they were too vague when they should have been specific
+- Where they let the other party deflect without pinning a commitment
+- Where they spent too long on a topic vs moving on
 - Tactical improvements for next time
 
 ### Step 8 — Save Transcript to Google Drive
@@ -252,12 +243,12 @@ After drafting emails, print to the terminal (not the Apple Note) an honest asse
 Save the transcript as a markdown file to the shared Google Drive agendas-minutes-notes folder:
 
 ```
-~/Library/CloudStorage/GoogleDrive-stephen.morrell@elaitra.com/Shared drives/Elaitra_gc/agendas-minutes-notes/
+~/Library/CloudStorage/GoogleDrive-<your-work-email>/Shared drives/<your-shared-drive>/agendas-minutes-notes/
 ```
 
-File naming convention: `YYYYMMDD-HHMM-Zoom-Person-Context.md` (e.g., `20260514-1109-Zoom-Mahima-Carpl.md`)
+File naming convention: `YYYYMMDD-HHMM-Zoom-Person-Context.md` (e.g., `20260514-1109-Zoom-Alice-AcmeCo.md`)
 
-**Do NOT include company names that could be confused** (e.g., use "Carpl" not "Ferrum" if the person works at Carpl Health).
+**Do NOT include company names that could be confused** (e.g., use the current employer, not a previous one, if the person has recently moved).
 
 If the Zoom downloader already saved the file there (Step 3c), confirm it exists and skip re-saving. Otherwise write the file using the Read/Write tools.
 
@@ -267,13 +258,13 @@ If the Zoom downloader already saved the file there (Step 3c), confirm it exists
 
 | Situation | Handling |
 |-----------|----------|
-| No Apple Note found for today | List all notes from the last 3 days, ask Stephen to identify the right one |
+| No Apple Note found for today | List all notes from the last 3 days, ask the user to identify the right one |
 | No transcript found anywhere | Proceed with summary from Apple Note alone; flag that no transcript was found |
 | Multiple transcripts found | List them and ask which to use |
 | Chrome is open when trying zoom_notes_downloader.py | Offer: close Chrome, use browser automation (agent-browse), or skip Zoom Docs |
 | Note title has special characters | Use `contains` matching in AppleScript rather than exact equality |
 | Transcript is over 10,000 words | Save to file only, link from note |
-| Email recipient unknown | Ask Stephen for the email address before drafting |
+| Email recipient unknown | Ask the user for the email address before drafting |
 
 ---
 
@@ -298,9 +289,9 @@ When done, confirm each completed item:
 | Apple Notes export script | `~/.claude/skills/apple-notes/scripts/export_notes.py` |
 | Apple Notes export output | `~/Desktop/AppleNotesExport/` |
 | Zoom local recordings | `~/Documents/Zoom/` |
-| Transcripts (Fireflies + Zoom) | `~/Library/CloudStorage/Dropbox/sm_elaitra/transcripts/` |
+| Transcripts (Fireflies + Zoom) | `~/Library/CloudStorage/Dropbox/<your-work-folder>/transcripts/` |
 | Zoom Docs downloader | `~/git/zoom_downloader/zoom_notes_downloader.py` |
-| Google Drive agendas folder | `~/Library/CloudStorage/GoogleDrive-stephen.morrell@elaitra.com/Shared drives/Elaitra_gc/agendas-minutes-notes/` |
+| Google Drive agendas folder | `~/Library/CloudStorage/GoogleDrive-<your-work-email>/Shared drives/<your-shared-drive>/agendas-minutes-notes/` |
 
 ---
 
@@ -320,3 +311,20 @@ Not:
 ```bash
 osascript -l JavaScript -e '...'   # DO NOT USE - causes -600 errors
 ```
+
+## Apple Notes: Name Mismatch and Performance (2026-05-22)
+
+**Exported filenames can differ from actual note names in Notes.app.** Example: export file `20260522-Alice Call - Quick Brief.md` but actual note name `20260522-Alice-Anderson`. Searching AppleScript for the export filename will fail.
+
+**Always use date-filtered search** instead of iterating all notes:
+```applescript
+set matchedNotes to every note whose modification date > (current date) - 7 * days
+repeat with n in matchedNotes
+  if name of n contains "Alice" then ...
+```
+This returns in seconds. Iterating thousands of notes can take 30-60+ seconds and hang background tasks.
+
+**Rules:**
+- Search by `contains` with a short, unique substring (e.g., "Alice" not "Alice Call - Quick Brief")
+- Never trust export filenames as the definitive note name
+- Always date-filter first to reduce the search space

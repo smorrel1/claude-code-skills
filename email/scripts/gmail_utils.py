@@ -37,23 +37,28 @@ except ImportError:
     HAS_BS4 = False
 
 # Paths to OAuth credentials
+# NOTE: Account keys below are user-defined. Rename them and their corresponding
+# token_<key>.json files to match the accounts you configure in config.json.
 SKILL_DIR = Path(__file__).parent.parent
 CREDENTIALS_PATH = SKILL_DIR / "credentials.json"
-TOKEN_PATH = SKILL_DIR / "token_elaitra.json"
+TOKEN_PATH = SKILL_DIR / "token_work.json"
 
 # Account-specific token paths
 ACCOUNT_TOKENS = {
-    'elaitra': SKILL_DIR / "token_elaitra.json",
+    'work': SKILL_DIR / "token_work.json",
     'gmail': SKILL_DIR / "token_gmail.json",
-    'kcl': SKILL_DIR / "token_kcl.json",
+    'university': SKILL_DIR / "token_university.json",
 }
 
 # Current account (set by main() before any API calls)
-CURRENT_ACCOUNT = 'elaitra'
+CURRENT_ACCOUNT = 'work'
 
-# Gmail API scopes
-# gmail.compose lets us create drafts; we deliberately omit gmail.send so
-# this skill cannot send mail directly. The user clicks Send in Gmail.
+# Gmail API scopes.
+# gmail.compose covers both draft creation AND messages.send per Google's docs,
+# so the `send` subcommand works under this scope set. The default and preferred
+# flow is still `draft` (user reviews and clicks Send in Gmail); `send` is used
+# deliberately for cases like Send-to-Kindle where threading and a human-review
+# step are not wanted.
 SCOPES = [
     'https://www.googleapis.com/auth/gmail.readonly',
     'https://www.googleapis.com/auth/gmail.compose',
@@ -816,8 +821,8 @@ def read_email(message_id: str):
 def main():
     global CURRENT_ACCOUNT
     parser = argparse.ArgumentParser(description="Gmail utility for reading, searching, drafting, and sending emails")
-    parser.add_argument('--account', '-a', choices=['elaitra', 'gmail', 'kcl'], default='elaitra',
-                       help='Account to use: elaitra (stephen.morrell@elaitra.com), gmail (stephen.morrell@gmail.com), or kcl (stephen.morrell@kcl.ac.uk)')
+    parser.add_argument('--account', '-a', choices=['work', 'gmail', 'university'], default='work',
+                       help='Account to use. Rename these choices and their token_<name>.json files to match your config.json.')
     subparsers = parser.add_subparsers(dest='command', help='Commands')
 
     # Draft command

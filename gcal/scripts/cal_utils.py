@@ -20,9 +20,9 @@ except ImportError:
     from googleapiclient.discovery import build
     from google.auth.transport.requests import Request
 
-# Paths to OAuth credentials (use Gmail skill credentials)
-GMAIL_SKILL_DIR = Path.home() / ".claude/skills/gmail"
-CLIENT_SECRETS_PATH = GMAIL_SKILL_DIR / "credentials.json"
+# Paths to OAuth credentials (shared with the email skill)
+EMAIL_SKILL_DIR = Path.home() / ".claude/skills/email"
+CLIENT_SECRETS_PATH = EMAIL_SKILL_DIR / "credentials.json"
 GCAL_SKILL_DIR = Path.home() / ".claude/skills/gcal"
 TOKEN_PATH = GCAL_SKILL_DIR / "token.json"
 

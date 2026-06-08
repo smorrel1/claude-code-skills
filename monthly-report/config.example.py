@@ -12,7 +12,7 @@ from pathlib import Path
 DROPBOX_DIR = Path.home() / "Dropbox"
 
 # Working directory for monthly report generation
-WORKINGS_BASE = DROPBOX_DIR / "InvestorComms/MonthlyReport/workings"
+WORKINGS_BASE = DROPBOX_DIR / "BoardReports/MonthlyReport/workings"
 
 # Where to export Apple Notes (used by apple-notes skill)
 APPLE_NOTES_EXPORT = DROPBOX_DIR / "AppleNotesExport"
@@ -33,4 +33,4 @@ FIREFLIES_DIR = DROPBOX_DIR / "fireflies-transcripts"
 
 # === OUTPUT DIRECTORIES ===
 # Where final monthly reports are saved
-MONTHLY_UPDATES_DIR = DROPBOX_DIR / "investor-comms/monthly-updates"
+MONTHLY_UPDATES_DIR = DROPBOX_DIR / "board-reports/monthly-updates"

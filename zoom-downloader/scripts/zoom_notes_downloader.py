@@ -42,13 +42,19 @@ from selenium.common.exceptions import TimeoutException, WebDriverException
 # ---------------------------------------------------------------------------
 # Configuration
 # ---------------------------------------------------------------------------
-DEFAULT_OUTPUT_DIR = os.path.expanduser(
-    "~/Library/CloudStorage/GoogleDrive-stephen.morrell@elaitra.com"
-    "/Shared drives/Elaitra_gc/agendas-minutes-notes"
+# Override with --output-dir or the ZOOM_OUTPUT_DIR env var.
+DEFAULT_OUTPUT_DIR = os.environ.get(
+    "ZOOM_OUTPUT_DIR",
+    os.path.expanduser("~/Documents/zoom-transcripts"),
 )
 CHROME_DIR = os.path.expanduser("~/Library/Application Support/Google/Chrome")
 STATE_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "state.json")
 ZOOM_DOCS_URL = "https://docs.zoom.us/recent"
+
+# Optional: set ZOOM_OWNER_NAME to the Zoom account holder's display name
+# (e.g. "Jane Doe"). Any "Jane Doe" or "Jane Doe's " prefix is then stripped
+# from transcripts and filenames. Leave unset to disable.
+ZOOM_OWNER_NAME = os.environ.get("ZOOM_OWNER_NAME", "").strip()
 PAGE_LOAD_WAIT = 8
 DOC_LOAD_WAIT = 5
 
@@ -174,15 +180,17 @@ def extract_zoom_cookies(profile_name):
 # ---------------------------------------------------------------------------
 # State management
 # ---------------------------------------------------------------------------
-def load_state():
-    if os.path.exists(STATE_FILE):
-        with open(STATE_FILE, "r") as f:
+def load_state(state_path=None):
+    path = state_path or STATE_FILE
+    if os.path.exists(path):
+        with open(path, "r") as f:
             return json.load(f)
     return {"downloaded": {}}
 
 
-def save_state(state):
-    with open(STATE_FILE, "w") as f:
+def save_state(state, state_path=None):
+    path = state_path or STATE_FILE
+    with open(path, "w") as f:
         json.dump(state, f, indent=2)
 
 
@@ -347,10 +355,9 @@ def extract_transcript(driver, doc_url):
     title = driver.title
 
     # Find transcript start
-    patterns = [
-        "Speaker 1\n", "Stephen Morrell\n", "Unknown\n",
-        "S1\n", "Sally\n", "motorola razr",
-    ]
+    patterns = ["Speaker 1\n", "Unknown\n", "S1\n"]
+    if ZOOM_OWNER_NAME:
+        patterns.append(f"{ZOOM_OWNER_NAME}\n")
     start_idx = -1
     for p in patterns:
         idx = body_text.find(p)
@@ -388,7 +395,8 @@ def make_filename(title, doc_id):
         clean = title
         clean = re.sub(r"\d{4}-\d{2}-\d{2}\s+\d{2}:\d{2}\(GMT[^)]*\)", "", clean)
         clean = re.sub(r"^\[My note\]\s*", "", clean)
-        clean = re.sub(r"Stephen Morrell's\s*", "", clean)
+        if ZOOM_OWNER_NAME:
+            clean = re.sub(rf"{re.escape(ZOOM_OWNER_NAME)}'s\s*", "", clean)
         clean = clean.strip().rstrip(".")
         clean = re.sub(r"[^\w\s-]", "", clean)
         clean = re.sub(r"\s+", "-", clean.strip())
@@ -398,7 +406,8 @@ def make_filename(title, doc_id):
     else:
         short_hash = hashlib.md5(doc_id.encode()).hexdigest()[:6]
         clean = re.sub(r"^\[My note\]\s*", "", title)
-        clean = re.sub(r"Stephen Morrell's\s*", "", clean)
+        if ZOOM_OWNER_NAME:
+            clean = re.sub(rf"{re.escape(ZOOM_OWNER_NAME)}'s\s*", "", clean)
         clean = re.sub(r"[^\w\s-]", "", clean).strip()
         clean = re.sub(r"\s+", "-", clean)
         if not clean:
@@ -432,12 +441,32 @@ def main():
                         help="Show browser window")
     parser.add_argument("--profile", default=None,
                         help="Chrome profile name (auto-detected if omitted)")
+    parser.add_argument("--account-label", default=None,
+                        help="Label for this Zoom account (e.g. 'work', 'personal'). "
+                             "Used to derive a per-account state file and to tag "
+                             "downloaded filenames so two accounts do not collide.")
+    parser.add_argument("--state-file", default=None,
+                        help="Explicit path to state.json. Defaults to "
+                             "state.json or state-<account-label>.json next to this script.")
     args = parser.parse_args()
+
+    # Per-account state file so two Zoom accounts (e.g. work + personal)
+    # do not overwrite each other's download history.
+    if args.state_file:
+        state_path = args.state_file
+    elif args.account_label:
+        state_path = os.path.join(
+            os.path.dirname(os.path.abspath(__file__)),
+            f"state-{args.account_label}.json",
+        )
+    else:
+        state_path = STATE_FILE
+    print(f"Using state file: {state_path}")
 
     output_dir = Path(args.output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
 
-    state = load_state()
+    state = load_state(state_path)
     if args.all:
         state["downloaded"] = {}
 
@@ -501,7 +530,7 @@ def main():
                     "downloaded_at": datetime.now().isoformat(),
                     "empty": True,
                 }
-                save_state(state)
+                save_state(state, state_path)
                 continue
 
             filename = make_filename(doc["title"], doc["doc_id"])
@@ -521,7 +550,7 @@ def main():
                 "downloaded_at": datetime.now().isoformat(),
                 "size": len(transcript),
             }
-            save_state(state)
+            save_state(state, state_path)
 
         print(f"\n--- Summary ---")
         print(f"  New: {new_count}  Skipped: {skip_count}")

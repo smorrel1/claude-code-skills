@@ -29,6 +29,7 @@ Usage:
 """
 
 import argparse
+import getpass
 import json
 import os
 import re
@@ -43,10 +44,10 @@ DEFAULT_OUTPUT_DIR = Path.home() / "Desktop" / "fireflies_transcripts"
 
 
 def get_api_key():
-    """Get API key from environment or prompt user."""
+    """Get API key from environment or prompt user (no echo)."""
     api_key = os.environ.get("FIREFLIES_API_KEY")
     if not api_key:
-        api_key = input("Enter your Fireflies API key: ").strip()
+        api_key = getpass.getpass("Enter your Fireflies API key (input hidden): ").strip()
     return api_key
 
 

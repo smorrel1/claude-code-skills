@@ -20,10 +20,10 @@ except ImportError:
     from googleapiclient.discovery import build
     from google.auth.transport.requests import Request
 
-# Paths to OAuth credentials (use Gmail skill credentials)
-GMAIL_SKILL_DIR = Path.home() / ".claude/skills/gmail"
-TOKEN_PATH = GMAIL_SKILL_DIR / "token.json"
-CLIENT_SECRETS_PATH = GMAIL_SKILL_DIR / "credentials.json"
+# Paths to OAuth credentials (shared with the email skill)
+EMAIL_SKILL_DIR = Path.home() / ".claude/skills/email"
+TOKEN_PATH = EMAIL_SKILL_DIR / "token.json"
+CLIENT_SECRETS_PATH = EMAIL_SKILL_DIR / "credentials.json"
 
 # Scopes needed for Sheets API (full access for read/write)
 SHEETS_SCOPES = ['https://www.googleapis.com/auth/spreadsheets']
@@ -47,7 +47,7 @@ def get_credentials() -> Credentials:
         raise FileNotFoundError(f"Client secrets not found at {CLIENT_SECRETS_PATH}. Copy from Gmail skill.")
 
     creds = None
-    gsheet_token_path = GMAIL_SKILL_DIR / "gsheet_token.json"
+    gsheet_token_path = EMAIL_SKILL_DIR / "gsheet_token.json"
 
     # Try to load existing gsheet-specific token
     if gsheet_token_path.exists():

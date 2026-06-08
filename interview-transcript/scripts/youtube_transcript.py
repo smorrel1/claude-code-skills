@@ -481,9 +481,21 @@ def text_to_html(text: str, title: str = "YouTube Transcript", url: str = None) 
 
 
 def download_thumbnail(url: str, output_path: str = None) -> str:
-    """Download YouTube video thumbnail. Returns path to downloaded image."""
+    """Download YouTube video thumbnail. Returns path to downloaded image.
+
+    On any failure the tempfile (if we created it) is removed so we don't
+    leave empty 0-byte JPGs in /tmp.
+    """
+    created_tempfile = output_path is None
     if output_path is None:
         output_path = tempfile.NamedTemporaryFile(suffix='.jpg', delete=False).name
+
+    def _cleanup_on_failure():
+        if created_tempfile:
+            try:
+                os.remove(output_path)
+            except OSError:
+                pass
 
     try:
         # Get video info to find thumbnail URL
@@ -505,13 +517,21 @@ def download_thumbnail(url: str, output_path: str = None) -> str:
                     thumbnail_url = thumbnails[0].get('url')
 
             if thumbnail_url:
-                # Download the thumbnail
+                # Only fetch over http(s). yt-dlp's JSON output is ultimately
+                # attacker-controlled (the uploader picks the thumbnail field),
+                # and urlretrieve would happily follow file:// or ftp:// which
+                # could read local files into the cover image.
+                if not thumbnail_url.lower().startswith(('http://', 'https://')):
+                    print(f"Warning: refusing non-http thumbnail URL: {thumbnail_url}", file=sys.stderr)
+                    _cleanup_on_failure()
+                    return None
                 urllib.request.urlretrieve(thumbnail_url, output_path)
                 print(f"Thumbnail downloaded: {output_path}", file=sys.stderr)
                 return output_path
     except Exception as e:
         print(f"Warning: Could not download thumbnail: {e}", file=sys.stderr)
 
+    _cleanup_on_failure()
     return None
 
 
@@ -773,29 +793,35 @@ def main():
             cover_image = download_thumbnail(args.youtube_cover)
 
         output_path = args.output or input_file.replace('.txt', '.epub')
-        epub_path = text_to_epub(
-            text,
-            title=title,
-            author=author,
-            url=source_url,
-            cover_image=cover_image,
-            output_path=output_path
-        )
+        try:
+            epub_path = text_to_epub(
+                text,
+                title=title,
+                author=author,
+                url=source_url,
+                cover_image=cover_image,
+                output_path=output_path
+            )
 
-        if epub_path:
-            file_size = os.path.getsize(epub_path)
-            file_size_mb = file_size / (1024 * 1024)
-            print(f"EPUB saved to: {epub_path}")
-            print(f"File size: {file_size_mb:.2f} MB")
-            if cover_image:
-                print(f"Cover image: {cover_image}")
-        else:
-            print("Error: Failed to create EPUB", file=sys.stderr)
-            sys.exit(1)
-
-        # Cleanup temp cover if downloaded
-        if args.youtube_cover and cover_image and cover_image.startswith(tempfile.gettempdir()):
-            os.remove(cover_image)
+            if epub_path:
+                file_size = os.path.getsize(epub_path)
+                file_size_mb = file_size / (1024 * 1024)
+                print(f"EPUB saved to: {epub_path}")
+                print(f"File size: {file_size_mb:.2f} MB")
+                if cover_image:
+                    print(f"Cover image: {cover_image}")
+            else:
+                print("Error: Failed to create EPUB", file=sys.stderr)
+                sys.exit(1)
+        finally:
+            # Always clean up the downloaded thumbnail, even if the EPUB
+            # build raised or exited early. We only remove tempfiles we
+            # created via --youtube-cover (never a user-supplied --cover).
+            if args.youtube_cover and cover_image and cover_image.startswith(tempfile.gettempdir()):
+                try:
+                    os.remove(cover_image)
+                except OSError:
+                    pass
 
         sys.exit(0)
 
