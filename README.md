@@ -20,6 +20,7 @@ Skills are reusable modules that extend Claude Code's capabilities. Each skill p
 | [docx-editor](#docx-editor) | Word document character normalization | None |
 | [interview-transcript](#interview-transcript) | YouTube/X.com transcript to Kindle EPUB | yt-dlp + Calibre |
 | [monthly-report](#monthly-report) | Monthly board report generation | Custom paths + OAuth |
+| [ce-to-510k](#ce-to-510k) | Port CE Mark / UKCA technical files to FDA 510(k) for AI/ML SaMD | None |
 
 ---
 
@@ -226,6 +227,29 @@ echo "=== Job ended at $(date) with status $? ===" >> "$HOME/fireflies_downloade
 ```
 
 See `monthly-report/SKILL.md` for detailed workflow documentation.
+
+---
+
+### ce-to-510k
+
+Port CE Mark / UKCA medical device technical documentation into an FDA 510(k) submission package for AI/ML SaMD (Software as a Medical Device). Distilled from a real 2023 AI/ML SaMD 510(k) clearance including the full Additional Information Request and Interactive Feedback cycle. Generalises across imaging, signal-processing, clinical decision support and other AI/ML domains.
+
+**What it produces:**
+1. Planning document for the 510(k) campaign
+2. Predicate device research and analysis (using the FDA 510(k) database)
+3. Pre-Submission (Q-Sub) request when appropriate
+4. Mapped 510(k) eCopy package structure (sections 00 to 21) with content gap list
+5. Strategic recommendation on whether to pursue a Pre-Sub
+
+**Highest-value content:** `references/06-fda-ai-ml-deficiencies.md` — a categorised catalogue of the AI/ML deficiency question patterns FDA uses during AINN and Interactive Feedback rounds, with a 16-item pre-empt checklist you can paste into your draft.
+
+**Usage:** invoke via the Skill tool or by mentioning any of: 510(k), FDA submission, Q-Sub, pre-sub, predicate device, substantial equivalence, CE to FDA, MDR to FDA, AI/ML 510k. Give Claude the path to your CE Mark / UKCA technical file root and your device details; the skill works through eight phases and produces deliverables on disk.
+
+**Not suitable for:** De Novo, PMA, IVD CLIA, EUA, IDE, drug applications.
+
+**Disclaimer:** procedural guidance only, not legal or regulatory advice. Verify all FDA guidance citations against current FDA publications before submission.
+
+See `ce-to-510k/README.md` and `ce-to-510k/SKILL.md` for details.
 
 ---
 
