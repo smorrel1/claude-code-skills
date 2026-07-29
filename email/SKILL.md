@@ -7,6 +7,144 @@ description: Email integration for reading, searching, and drafting emails with 
 
 Read, search, and draft emails using the Gmail API with OAuth credentials.
 
+## CRITICAL: Use this skill for every email request, explicit OR implied
+
+**MANDATORY.** Any time the user asks for an email to be written, revised, sent, or drafted, use this skill. This includes **implied** requests, where the user does not use the word "email" or "draft" but the intent is clearly to produce a message to a named recipient. Treat all of the following as drafting requests that go through this skill:
+
+- "ask X ...", "reply to X ...", "chase X ...", "follow up with X ...", "let X know ..."
+- "yes" (or similar) in answer to your own offer to draft or send something
+- "tell X ...", "get back to X ...", "send X the ...", "forward X ..."
+- Any turn where the natural output is a message to a specific person, even if phrased as an instruction about content rather than about email
+
+When in doubt, assume the user wants a real Gmail draft (not just text pasted in the conversation) and produce one via this skill. Do not display email text inline as a substitute for drafting unless the user explicitly says they only want to see the text.
+
+## CRITICAL: Run /humanizer on every composed email
+
+**MANDATORY.** Before saving ANY draft, you MUST run the `/humanizer` skill on the body text. This applies to all composed emails (new, reply, forward) with no exceptions, unless the user explicitly waives it for a specific email or session.
+
+Workflow:
+1. Compose the email body.
+2. Invoke the `/humanizer` skill on the body text. Strip em dashes, AI vocabulary (pivotal, landscape, underscore, testament, intricate, vibrant, etc.), copula avoidance (serves as, stands as, represents), inline-header colon lists, forced rule-of-three, negative parallelisms, sycophantic openers, knowledge-cutoff disclaimers.
+3. Pass the humanized text as the `--body` argument.
+
+If you save a draft without running humanizer, you have violated this skill. Treat it as a hard precondition, the same as HTML formatting.
+
+## CRITICAL: Check Sent items before drafting or reporting on a thread
+
+**MANDATORY.** The user frequently sends emails directly from Gmail (or edits and sends a draft) between turns, without telling you. Your view of a thread is stale unless you re-check. Before drafting a new email, revising a draft, or telling the user the state of any conversation, **search the user's Sent items (`in:sent`) for that recipient/thread** and read the most recent sent message.
+
+Why this matters:
+- A draft you created may already have been sent (possibly edited first). Treating it as still-pending leads you to duplicate it, overwrite the user's edits, or misreport what is outstanding.
+- The user may have already sent the very thing you are about to draft, or answered a point you are about to raise.
+- Sent messages are the ground truth for "what has the user actually said to this person," more so than drafts or your own memory of the session.
+
+Required check (run before composing or summarising thread state):
+```bash
+python3 ~/.claude/skills/email/scripts/gmail_utils.py --account <acct> search --query "in:sent to:<addr>" --max 5
+```
+Then read the top result if its date is newer than what you last saw. Reconcile any surprise (a sent copy of your draft, a message you did not write) with the user before proceeding. Do not assume the thread is frozen since your last action.
+
+## CRITICAL: Never infer sent-vs-draft status from headers — verify it
+
+**MANDATORY.** Before you tell the user (or yourself) that a message is "sent," verify it. **A draft and a sent message are indistinguishable by their `From:` and `Date:` headers** — a draft carries a `Date:` header set to its last-saved time, which reads exactly like a send time, and both show `From: Stephen`. A plain thread/metadata search returns drafts and sent messages **intermixed**, so inferring status from who-it's-from and when is unreliable and has caused real errors (reporting a draft P.S. as already sent).
+
+The status lives in `labelIds`, not the headers. To determine status, do ONE of:
+- Check the message's `labelIds`: `DRAFT` present → it's an unsent draft; `SENT` present → it was actually sent.
+- Or scope the search: `in:draft` vs `in:sent` (a message in `in:sent` was genuinely sent).
+
+```bash
+# Verified per-message status on a thread:
+python3 - << 'PY'
+import sys,os; sys.path.insert(0,os.path.expanduser('~/.claude/skills/email/scripts'))
+import gmail_utils; gmail_utils.ACCOUNT='work'; svc=gmail_utils.get_gmail_service()
+th=svc.users().threads().get(userId='me',id='<THREAD_ID>',format='metadata').execute()
+for m in th['messages']:
+    h={x['name']:x['value'] for x in m['payload']['headers']}
+    L=m.get('labelIds',[])
+    print(('DRAFT' if 'DRAFT' in L else 'SENT' if 'SENT' in L else str(L)), h.get('Date'))
+PY
+```
+
+When reporting status to the user, state it explicitly and only after this check — "the Ming P.S. is still a **draft** (04:14), not sent." Never let a draft's save-time masquerade as a send. This pairs with the CLAUDE.md rule to refer to every email by **status + time**: the time is meaningless if the status is guessed wrong.
+
+## CRITICAL: Always thread onto the most RELEVANT recent correspondence
+
+**MANDATORY.** Before drafting ANY email to a person, you MUST identify the most **topically relevant** recent thread with that person and thread the new draft onto it.
+
+Relevance is defined by topic match: which existing thread already covers the same subject as the new message. If a directly relevant recent thread exists (even if it is not the strictly most recent exchange with the recipient), thread on it. Only if no topically relevant thread exists in recent correspondence do you fall back to the strictly most recent exchange.
+
+Threading on an unrelated recent thread is a failure. The recipient opens what looks like a reply to a different conversation and has to mentally re-stitch the context. This has happened repeatedly and the user has flagged it explicitly.
+
+Mandatory workflow before drafting any email:
+
+1. **Look up recent correspondence with the recipient** — search for any message where they are From, To, or CC in the last ~90 days.
+
+2. **Identify the most topically relevant thread.** Rank candidates by topic match with the new message content. If two threads are equally relevant, pick the more recent one. If nothing is clearly relevant, thread onto the strictly most recent exchange.
+
+3. **Thread onto that message** using `--reply-to <message_id> --keep-thread`. The `--keep-thread` lock prevents auto-redirect to unrelated recent traffic.
+
+4. **A user-sent message still belongs to a thread.** If the most relevant thread's most recent message is one the user sent (outbound), thread there. Do NOT take user-outbound-as-latest as an excuse to start fresh.
+
+5. **NEVER use `--new` without an explicit instruction from the user in the current turn** ("start a new thread", "fresh email", "send separately"). Do not derive `--new` from any reasoning of your own. If no topically relevant thread exists, fall back to the strictly most recent thread with the recipient — do NOT default to `--new`.
+
+6. **NEVER use a draft as the `--reply-to` target.** A draft has unsent content that would appear in the quoted history. Fall back to the most recent SENT or RECEIVED message on that thread.
+
+7. **Report the thread you landed on.** In your reply, state the thread subject and the save time of the original message you replied to, so the user can catch a wrong-thread before send.
+
+8. **Quote this email's history in the reply body, exactly as a mail client would on Reply, Reply All or Forward.** That means the parent message and the quoted chain already embedded in the parent's own body (the history the correspondent has themselves seen), oldest at the bottom, parent immediately above the new content, each nested in a blockquote. Do NOT assemble the quote by iterating every message in the Gmail `threadId`: a broadcast (BCC) email collects every recipient's separate reply into one thread in this mailbox, and quoting the thread leaks other correspondents' replies to the recipient (this happened on 27 Jul 2026: a reply to one shareholder included six other shareholders' consent replies and a phone number).
+
+Failure modes to avoid, all of which have happened in past sessions:
+
+- Threading a topically unrelated chaser onto the strictly most recent thread when a directly-relevant older thread exists. (Prefer relevance. The June 30 breast CT forward is NOT the right thread for a July 1 Fiona-procurement chaser when there is a June 23 "ViewFinder restoration" thread on exactly the topic.)
+- Using `--new` because the most recent message was a user outbound. (User outbound is still a thread message. Thread on it.)
+- Using `--new` because the existing threads with the recipient are group threads and the new email is 1:1. (Thread on the group thread anyway when it is topically relevant. Set To to only the new recipient. Cosmetic oddness is acceptable.)
+- Inventing a justification for `--new` and writing it in a code comment to convince yourself. (If the user has not said "new thread" in this turn, do not start one. The presence of a justification is itself the smell.)
+
+## CRITICAL: Refer to drafts by save time, never by draft ID
+
+**MANDATORY.** When telling the user about a draft (creation, revision, comparison, draft state lists), refer to it by its **save time** (e.g. "your draft saved 15 Jun at 13:17 BST") and not by the Gmail draft ID (e.g. "r-736357406714828559" or "s:12383784485695926086").
+
+Reasons:
+- Draft IDs are opaque, long, and meaningless to the user.
+- Save times are human-readable and let the user identify the draft directly in their Gmail UI (which shows the same timestamp).
+- When multiple drafts exist on the same thread, save times convey ordering at a glance; draft IDs do not.
+
+Rules:
+- Always include the save time when first naming a draft in a reply: date and time in the user's local timezone, plus a one-line content hook (e.g. "your draft saved 15 Jun 13:17 BST opening 'Hi and sorry for the radio silence'").
+- For draft-state summary tables, label rows by save time (`Yours, saved 15 Jun 13:17`), not by ID.
+- Internally you may use draft IDs in tool calls; the user just should never see them.
+- If the user explicitly asks for an ID (debugging, copy-paste), then provide it. Otherwise default to save time.
+
+Failure mode to avoid: dumping a draft ID like `r-736357406714828559` into user-facing text. The user cannot map this back to anything they see in Gmail. Save times are the shared vocabulary.
+
+Failure mode to avoid: the user asks for a follow-up note to a person they corresponded with recently, and the model uses `--new` because the most recent message in that thread was the user's own outbound. The user sees a fresh-thread draft, has to call it out, and asks for a redo. This has happened repeatedly. Treat threading as the default and starting fresh as the explicit exception.
+
+## CRITICAL: Preserve user edits when revising a draft
+
+**MANDATORY.** The user routinely edits drafts in Gmail between turns. NEVER assume your last-known version is the current draft. Before creating a revised version of any draft you previously saved (and during ANY follow-up email task, even if the user has only asked you to change one thing), you MUST diff for user edits and bring them forward.
+
+Required workflow when revising an existing draft:
+
+1. **List recent drafts** matching the recipient or subject. The Gmail draft API surfaces user edits as separate draft IDs (often prefixed `draft-rewrite-`) or as in-place updates to your original draft ID. Either way, you have to inspect each candidate, not trust the ID you originally returned.
+
+2. **Read the latest draft body** (via `drafts.get` or by `messages.get` on the draft's message ID) and compare it line-by-line to the text you last wrote. ANY substantive difference is a user edit. Examples of edits that have been overwritten in the past:
+   - Trimmed phrases (e.g. cut a clause for length or tone)
+   - Softening hedges added (e.g. "Assuming that is what you have in mind")
+   - Tonal weakenings (e.g. "It is" → "It seems...to me")
+   - Voice changes (e.g. "keep my diary open" → "will be in the office")
+   - Inserted alternatives (e.g. "And / or I'm happy to...")
+   - Reordered or dropped sentences
+   - CC/BCC list changes
+   - Subject line tweaks
+
+3. **Build the new version from the USER's edited text as the base**, applying only the deltas the user explicitly asked for in this turn. Do NOT rebuild from your previous version's text or from a fresh compose.
+
+4. **Confirm explicitly** in your reply: "Built v4 from your edited v2 (draft ID ...). Preserved: [list]. Added: [list]. Removed: [list]." If you cannot tell which draft is the user-edited one, ask before writing.
+
+5. **Never delete the prior draft** until the user has either sent the new version or explicitly confirmed deletion. This applies even when you think you've successfully captured all edits, because Gmail's draft API has no atomic "revise" operation: the only safe pattern is leave-old, create-new, then delete-old after confirmation.
+
+Failure mode to avoid: the user manually edits a draft in Gmail (often investing significant thought), then asks for one small change, and you regenerate from your own previous text, wiping their work. This has happened repeatedly. Treat draft inspection-and-diff as a hard precondition for any revision, the same as HTML formatting and humanizer.
+
 ## CRITICAL: Email Body Formatting
 
 **NEVER use Markdown in email bodies. Gmail does not render Markdown, use HTML tags instead.**
@@ -270,9 +408,19 @@ python3 ~/.claude/skills/email/scripts/gmail_utils.py delete-draft --id "draft_i
 
 ## Referring to drafts in conversation
 
-**When you tell the user about a draft you have just created, or refer back to one you created earlier, identify it by `timestamp + recipient + subject`** (e.g. *"the 17:25 draft to Alice re Q2 planning"*), **not by the raw Gmail draft ID** (e.g. `r-3022724062169744130`). The IDs the API returns are long, opaque and not searchable in the Gmail UI, so they make it hard for the user to find the right draft. Keep the ID available internally for `delete-draft` and for tracking, but do not lead user-facing text with it.
+**MANDATORY.** When you tell the user about a draft you have just created, or refer back to one you created earlier, identify it by **saved timestamp + recipient + subject** (e.g. *"the 17:25 draft to Alice re Q2 planning"*). This is what the user can actually see in their mail client.
 
-The same applies when asking the user to discard a superseded draft: describe it by **time created, recipient, subject and attachment count**, so the user can identify it in their Drafts folder. A small table is often the clearest format when there are several drafts to disambiguate.
+**Do NOT refer to drafts by any of:**
+
+- **Internal version numbers** ("v3", "v7", "the v9 draft"). The user cannot see these. They mean nothing in the Gmail or Mac Mail UI and force the user to ask which draft you mean.
+- **Raw Gmail draft IDs** ("r-3022724062169744130", "19eb8bc741e6f428"). These hash-style strings are not displayed in any mail client and are useless for navigation.
+- **Ordinal labels relative to your work** ("the latest one", "the one I just saved") without also stating the timestamp. The user may have edited a different one in between, so an ordinal alone is ambiguous.
+
+Keep the Gmail draft ID internally for `delete-draft` and for tracking, but never lead user-facing text with it.
+
+**When asking the user to discard a superseded draft,** describe it by **saved timestamp, recipient, subject, and a one-line distinguishing feature** (e.g. "the 23:05 Seb draft with the Barts/SLaM question"), so the user can identify it at a glance in their Drafts folder. A small table is often the clearest format when several drafts need disambiguation, with one column for the saved timestamp.
+
+**Telling the user "it's in Gmail" when they can't see it:** Mac Mail.app syncs the Drafts folder via IMAP on a polling interval (every few minutes). A draft saved via the Gmail API is in Gmail immediately but may take 1-2 minutes to appear in Mail.app. If the user reports a draft is missing from their Mac client, confirm it exists in Gmail by searching `in:draft` with the recipient, quote the timestamp back, and tell them to wait briefly or force an IMAP refresh (Mailbox → Synchronise → account name).
 
 ## Workflow for Follow-up Emails
 
@@ -313,3 +461,70 @@ The user's Send-to-Kindle address should be stored in a local memory file (e.g. 
 - Drafts are saved to your authenticated Gmail account
 - First run opens browser for OAuth authorization
 - Token files are stored per account (e.g., `token_<account>.json`)
+
+## Situational awareness: check sent items and drafts before referencing other emails (added 2026-07-08)
+
+Whenever composing or revising an email that references other messages that may or may not have been sent ("my earlier email", "the email before this one", "as I wrote to X"), FIRST check the current state of the mailbox rather than relying on conversation memory:
+
+```bash
+# What actually went out recently
+python3 ~/.claude/skills/email/scripts/gmail_utils.py --account <acct> search --query "in:sent newer_than:2d" --max 10
+# What is still sitting unsent
+python3 ~/.claude/skills/email/scripts/gmail_utils.py --account <acct> search --query "in:draft" --max 10
+```
+
+Rules:
+1. **Always refer to emails by their timestamp** (and ID where useful), e.g. "your 8 Jul 00:30 email to Marissa", not "the email I drafted earlier". Timestamps disambiguate drafts from sent copies and multiple revisions of the same subject line.
+2. **Never assume a draft was sent.** Drafts created in a session frequently remain unsent; sent-state changes only when the user clicks send. Verify with `in:sent` before writing sentences like "as per my earlier email".
+3. **Propose tidy-ups.** When the check reveals drafts that duplicate or are superseded by already-sent messages (same thread/subject, older timestamp), list them with timestamps and propose deleting them (`delete-draft --id <id>`). Also flag time-sensitive drafts that appear to have missed their window.
+4. **Report the inventory briefly** (sent vs pending, by timestamp) when it affects what the user should do next, e.g. sending-order dependencies between related drafts.
+
+## Shell quoting: dollar amounts in --body (added 2026-07-08)
+
+**Never pass `--body` as a double-quoted bash string when the body contains `$` characters.** Bash expands `$1`, `$5`, `$(...)` etc. inside double quotes, silently mangling currency: `US$1,000` became `US,000` in a real draft on 2026-07-08.
+
+Safe pattern — build the body with a quoted heredoc delimiter (no expansion), then pass the variable:
+
+```bash
+BODY=$(cat << 'HTMLEOF'
+<p>Pre-approval applies above US$1,000 per item.</p>
+HTMLEOF
+)
+python3 ~/.claude/skills/email/scripts/gmail_utils.py --account work draft --to "x@y.com" --subject "..." --body "$BODY"
+```
+
+The quoted `'HTMLEOF'` delimiter prevents all expansion inside the heredoc; the final `"$BODY"` expansion inserts the literal text without re-processing `$`.
+
+**Always verify after drafting** when the body contains currency: read the draft back and grep for the mangled forms (`US,000`, bare `1,000` missing its `$`). This applies to any `$` in bodies: prices, `$variable`-looking text, regex examples.
+
+## CEO voice pass (added 2026-07-08 - run this AFTER any humanizer principles)
+
+Stephen's emails must read like a busy CEO wrote them, not an AI. The humanizer skill is gstack-managed and gets overwritten on upgrade, so this pass lives HERE and always runs last, on the final body text.
+
+**Before drafting, sample the voice:** skim 2-3 of Stephen's real messages in `in:sent` to the same or similar recipients. Match that register, not generic business English.
+
+**Sentence rules:**
+- Short, direct sentences. Mostly under ~12 words. One idea per sentence.
+- Break compound sentences in two. "X, so Y" becomes "X. So Y."
+- Fragments are good. "Quick one." "Two things." "Done."
+- Starting with And, But, So is good.
+- Kill AI tells: no "not X but Y" parallelisms, no rule-of-three triads, no "exactly the evidence that matters" flourishes, no perfectly parallel bullet lists (vary bullet length), no em dashes ever (plain hyphens fine), no "I hope this finds you well".
+- Informal contractions Stephen actually uses: thx, pls, til, btw. Double exclamation marks occasionally when genuinely enthusiastic (his real habit).
+
+**Imperfections (config.json include_minor_errors=true):**
+- 1-2 per email, maximum. More looks careless, not human.
+- Natural types only: a missing comma, a lowercase i, "Thank yo" style finger-slips, a missing apostrophe.
+- NEVER in: numbers, currency amounts, dates, names, legal/contract language, technical parameters, or anything the recipient might copy into a document. A typo in US$1,500 costs money; a typo in "recieve" costs nothing.
+- Scale to familiarity: warm contacts (Peter, Marissa, Chirag, team, advisors) get the full voice. First-contact, formal, legal or regulatory emails get short sentences but ZERO injected errors.
+
+**Structure:** total length shorter than feels complete. Busy CEOs under-explain. If a paragraph can be a line, it's a line. If context can be an attachment, attach it.
+
+## Draft collision protocol (added 2026-07-08 - the user edits drafts in Gmail while the session runs)
+
+The delete-and-recreate revision pattern DESTROYS the user's in-progress Gmail edits. On 2026-07-08 the user's edits to a Peter Graham draft were nearly lost this way, and Gmail resurrected the edited copy as a duplicate, leaving two competing drafts. Rules:
+
+1. **Ownership handoff.** The moment a draft is announced to the user as ready for review, it belongs to the USER. From then on: propose wording changes as text in the conversation for the user to apply; do not delete or recreate the draft unless the user explicitly says to update it.
+2. **Read before any revision.** Before touching an existing draft for any reason, `read --id` its CURRENT body and compare against the body this session last wrote. Any difference means the user has edited it: STOP, keep their version authoritative, and build any requested change on top of THEIR current body, never on the session's remembered version.
+3. **Expect ghosts.** Deleting a draft while the user has it open in a compose window causes Gmail to re-save their window as a NEW draft on their next keystroke. After any revision, `in:draft` search the subject line and inventory duplicates by timestamp.
+4. **Duplicate cleanup.** Where duplicates exist, the newest USER-modified copy is authoritative. Delete only copies verified (by body comparison) to be the assistant's own unedited output.
+5. **Attachments.** After the user edits a draft that carried an attachment, remind them to confirm the paperclip survived; attachment state is not visible through the read command.

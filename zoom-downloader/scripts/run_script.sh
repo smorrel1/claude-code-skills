@@ -8,6 +8,10 @@ set -u
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 LOG_FILE="${SCRIPT_DIR}/cron_log.txt"
+MAX_LOG_BYTES=$((5 * 1024 * 1024))   # 5 MB, then rotate to .1
+if [ -f "$LOG_FILE" ] && [ "$(stat -f%z "$LOG_FILE" 2>/dev/null || stat -c%s "$LOG_FILE")" -gt "$MAX_LOG_BYTES" ]; then
+    mv -f "$LOG_FILE" "$LOG_FILE.1"
+fi
 
 echo "=== Job started at $(date) ===" >> "$LOG_FILE"
 

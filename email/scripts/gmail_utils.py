@@ -232,6 +232,166 @@ def format_quoted_reply_html(original_email: dict) -> str:
 </div>'''
 
 
+def _strip_prior_quotes_plain(text: str) -> str:
+    """Strip 'On X wrote:' quoted history from a plain-text message body.
+
+    Each message's own body_text typically already contains all prior messages
+    quoted below an attribution line like "On Tue, 23 Jun 2026 ..., Stephen Morrell wrote:".
+    When we flat-list every message in the thread, that nested history duplicates.
+    This helper returns only the message's own new content.
+    """
+    if not text:
+        return text
+    import re
+    lines = text.split('\n')
+    result = []
+    for line in lines:
+        # Stop at first attribution line ("On <date>, <sender> wrote:")
+        if re.match(r'^\s*On\s+.+wrote:\s*$', line):
+            break
+        # Also stop at NHSmail-style banner ("Begin forwarded message:")
+        if re.match(r'^\s*Begin forwarded message:\s*$', line):
+            break
+        # And at any line starting with '>' (already-quoted history)
+        stripped = line.lstrip()
+        if stripped.startswith('>'):
+            break
+        result.append(line)
+    return '\n'.join(result).rstrip()
+
+
+def _strip_prior_quotes_html(html: str) -> str:
+    """Strip Gmail-style quoted history from an HTML message body.
+
+    Removes the outermost gmail_quote div (and anything after it) so that
+    only the message's own new content remains. Falls back to blockquote
+    detection when no gmail_quote wrapper is present.
+    """
+    if not html:
+        return html
+    import re
+    # Kill anything from the first gmail_quote onwards (Gmail convention)
+    m = re.search(r'<div[^>]*class="[^"]*gmail_quote[^"]*"', html, re.IGNORECASE)
+    if m:
+        return html[:m.start()].rstrip()
+    # Fallback: strip from first blockquote onwards (most quoted history is in a blockquote)
+    m = re.search(r'<blockquote', html, re.IGNORECASE)
+    if m:
+        return html[:m.start()].rstrip()
+    return html
+
+
+def get_thread_history(service, thread_id: str) -> list:
+    """Fetch all non-draft messages in a thread as email dicts, oldest first.
+
+    Used to build a full-thread quoted reply so that recipients on clients
+    that do not render Gmail-style threading (NHS Outlook, mobile, shared
+    mailboxes) still see the complete conversation context in the body.
+    """
+    try:
+        thread = service.users().threads().get(
+            userId='me', id=thread_id, format='full'
+        ).execute()
+    except Exception:
+        return []
+
+    messages = []
+    for msg_data in thread.get('messages', []):
+        labels = msg_data.get('labelIds', [])
+        if 'DRAFT' in labels:
+            continue
+        headers = {h['name']: h['value'] for h in msg_data['payload'].get('headers', [])}
+        body_text, body_html = extract_body_both(msg_data['payload'])
+        messages.append({
+            'id': msg_data.get('id'),
+            'threadId': msg_data.get('threadId'),
+            'from': headers.get('From', 'Unknown'),
+            'to': headers.get('To', ''),
+            'subject': headers.get('Subject', '(No Subject)'),
+            'date': headers.get('Date', ''),
+            'message_id': headers.get('Message-ID', ''),
+            'references': headers.get('References', ''),
+            'body': body_text,
+            'body_html': body_html,
+            'internalDate': int(msg_data.get('internalDate', 0)),
+        })
+
+    messages.sort(key=lambda m: m['internalDate'])
+    return messages
+
+
+def format_full_thread_quote_html(service, thread_id: str, parent_email: dict) -> str:
+    """Format the entire thread as flat HTML blockquotes, most recent first.
+
+    Falls back to single-message quoting if the thread fetch fails or the
+    thread contains only the parent. Ensures recipients on clients that do
+    not auto-thread still see full prior context inline.
+    """
+    thread_msgs = get_thread_history(service, thread_id)
+    if not thread_msgs:
+        return format_quoted_reply_html(parent_email)
+
+    # Ensure parent is represented even if it did not appear in the thread fetch
+    # (e.g. race with a very recently sent message not yet indexed).
+    parent_id = parent_email.get('id')
+    if parent_id and not any(m.get('id') == parent_id for m in thread_msgs):
+        parent_copy = dict(parent_email)
+        parent_copy.setdefault('internalDate', 10 ** 18)  # force most-recent
+        thread_msgs.append(parent_copy)
+
+    if len(thread_msgs) == 1:
+        return format_quoted_reply_html(thread_msgs[0])
+
+    # Most recent first for top-down rendering below the new reply body.
+    ordered = sorted(thread_msgs, key=lambda m: m.get('internalDate', 0), reverse=True)
+
+    parts = ['<br><br>']
+    for msg in ordered:
+        from_addr = html_module.escape(msg.get('from', 'Unknown'))
+        date = html_module.escape(msg.get('date', ''))
+        if msg.get('body_html'):
+            # Strip nested quoted history so each message contributes only its own content
+            own_html = _strip_prior_quotes_html(msg['body_html'])
+            quoted_content = own_html
+        else:
+            own_text = _strip_prior_quotes_plain(msg.get('body', ''))
+            escaped = html_module.escape(own_text)
+            quoted_content = escaped.replace('\n', '<br>\n')
+        parts.append(f'''<div class="gmail_quote">
+<div dir="ltr" class="gmail_attr">On {date}, {from_addr} wrote:<br></div>
+<blockquote class="gmail_quote" style="margin:0px 0px 0px 0.8ex;border-left:1px solid rgb(204,204,204);padding-left:1ex">
+{quoted_content}
+</blockquote>
+</div>''')
+    return '\n'.join(parts)
+
+
+def format_full_thread_quote_plain(service, thread_id: str, parent_email: dict) -> str:
+    """Plain text version of full-thread quoting for the text/plain alternative."""
+    thread_msgs = get_thread_history(service, thread_id)
+    if not thread_msgs:
+        return format_quoted_reply(parent_email)
+
+    parent_id = parent_email.get('id')
+    if parent_id and not any(m.get('id') == parent_id for m in thread_msgs):
+        parent_copy = dict(parent_email)
+        parent_copy.setdefault('internalDate', 10 ** 18)
+        thread_msgs.append(parent_copy)
+
+    if len(thread_msgs) == 1:
+        return format_quoted_reply(thread_msgs[0])
+
+    ordered = sorted(thread_msgs, key=lambda m: m.get('internalDate', 0), reverse=True)
+    lines = []
+    for msg in ordered:
+        own_body = _strip_prior_quotes_plain(msg.get('body', ''))
+        lines.append(f"\n\nOn {msg.get('date', '')}, {msg.get('from', 'Unknown')} wrote:")
+        lines.append("")
+        for line in own_body.split('\n'):
+            lines.append(f"> {line}")
+    return '\n'.join(lines)
+
+
 def find_latest_thread_message(service, email_address: str) -> str:
     """Find the most recent message ID in a thread with the given email address.
 
@@ -450,7 +610,12 @@ def create_message(to: str, subject: str, body: str, cc: str = None, bcc: str = 
             body_escaped = html_module.escape(body)
             body_html = body_escaped.replace('\n', '<br>\n')
 
-        # Add quoted reply
+        # Add quoted reply — quote this email's history as a mail client
+        # would on Reply/Reply All/Forward: the parent message with the chain
+        # already embedded in its own body. Never iterate the Gmail threadId:
+        # a BCC broadcast collects every recipient's separate reply into one
+        # thread here, and quoting the thread leaks other correspondents'
+        # replies to the recipient.
         quoted_html = format_quoted_reply_html(original)
 
         full_html = f'''<div dir="ltr">{body_html}</div>{quoted_html}'''
@@ -523,13 +688,17 @@ def create_message(to: str, subject: str, body: str, cc: str = None, bcc: str = 
     else:
         message = body_part
 
-    # Set headers
-    message['to'] = to
-    message['subject'] = subject
+    # Set headers (RFC 5322 names are case-insensitive, but Gmail's web UI
+    # draft view only populates the To/Cc/Bcc input fields when the headers
+    # are in canonical case. Lowercase 'to:' parses fine for sending but
+    # shows as an empty recipient field in the draft, which Stephen has to
+    # re-fill before Send. Use canonical case to match Apple Mail/Gmail.)
+    message['To'] = to
+    message['Subject'] = subject
     if cc:
-        message['cc'] = cc
+        message['Cc'] = cc
     if bcc:
-        message['bcc'] = bcc
+        message['Bcc'] = bcc
     if in_reply_to:
         message['In-Reply-To'] = in_reply_to
     if references:

@@ -51,27 +51,13 @@ If multiple notes match, show the list and ask the user to confirm which one.
 
 Note titles typically follow the format: `YYYYMMDD-Person Name.md` or `YYYYMMDD-Meeting Topic.md`
 
-### Step 3 — Find the Zoom Transcript
+### Step 3 — Find the Zoom / Fireflies Transcript
 
-Check three sources in order:
+**Prefer Fireflies (3a) wherever it exists.** Fireflies transcripts carry speaker names (Speaker 1 = X, etc. resolve to real attendees), which makes the summary far more accurate about who said and committed to what. Always check Fireflies first; only fall back to a Zoom source when no Fireflies transcript is available for the meeting. If both a Fireflies and a Zoom transcript exist for the same meeting, use the Fireflies one.
 
-#### 3a. Local Zoom Recordings (~/Documents/Zoom/)
+Check the sources below. **If none of them yields the transcript for the meeting in question, trigger an immediate sync (Step 3d) before giving up.** Do not declare "not synced" without running the sync scripts manually first.
 
-Zoom saves recordings in folders named `YYYY-MM-DD HH.MM.SS Meeting Title`:
-
-```bash
-TODAY_DASH=$(date +%Y-%m-%d)
-ls ~/Documents/Zoom/ | grep "^$TODAY_DASH"
-```
-
-Inside each folder, look for transcript files:
-- `meeting_saved_new_chat.txt` (Zoom in-meeting chat)
-- `*.vtt` (WebVTT transcript if cloud recording was enabled)
-- `audio_transcript.txt` or similar
-
-If a time argument was given (e.g., "10am"), match folder names containing that hour.
-
-#### 3b. Fireflies Transcripts (Dropbox)
+#### 3a. Fireflies Transcripts (Dropbox) — PREFERRED (has speaker names)
 
 ```
 ~/Library/CloudStorage/Dropbox/<your-work-folder>/transcripts/
@@ -90,27 +76,71 @@ Also search by attendee name if date search returns nothing:
 grep -ril "Alice" ~/Library/CloudStorage/Dropbox/<your-work-folder>/transcripts/ | grep "$TODAY_DASH"
 ```
 
+If a Fireflies transcript exists for the meeting, use it and skip the Zoom sources below. They are fallbacks only.
+
+#### 3b. Local Zoom Recordings (~/Documents/Zoom/)
+
+Zoom saves recordings in folders named `YYYY-MM-DD HH.MM.SS Meeting Title`:
+
+```bash
+TODAY_DASH=$(date +%Y-%m-%d)
+ls ~/Documents/Zoom/ | grep "^$TODAY_DASH"
+```
+
+Inside each folder, look for transcript files:
+- `meeting_saved_new_chat.txt` (Zoom in-meeting chat)
+- `*.vtt` (WebVTT transcript if cloud recording was enabled)
+- `audio_transcript.txt` or similar
+
+If a time argument was given (e.g., "10am"), match folder names containing that hour.
+
 #### 3c. Zoom Docs (docs.zoom.us)
 
-The `zoom_notes_downloader.py` script at `~/git/zoom_downloader/zoom_notes_downloader.py` can pull transcripts from Zoom Docs.
+The `zoom_notes_downloader.py` script at `~/git/zoom_downloader/zoom_notes_downloader.py` pulls transcripts from Zoom Docs into the same transcripts folder as Fireflies. Try the script first (see Step 3d for the invocation); only fall back to the alternatives if it errors.
 
-**Known limitation (May 2026):** The zoom_notes_downloader.py script cannot currently authenticate on docs.zoom.us. Chrome 148+ blocks CDP on the default profile, and Zoom stores auth cookies as session-only (in-memory), making cookie extraction impossible. See the zoom-downloader skill for full details.
+**Fallback alternatives if the script fails:**
+1. Use `claude-in-chrome` MCP tools to navigate `https://docs.zoom.us/recent` from within the live Chrome session and extract the transcript via JavaScript.
+2. Ask the user to open docs.zoom.us and copy the transcript manually.
 
-**Working alternatives:**
-1. Use `claude-in-chrome` MCP tools to navigate `https://docs.zoom.us/recent` from within the live Chrome session and extract the transcript via JavaScript
-2. Ask the user to open docs.zoom.us and copy the transcript manually
+Historical note: The script was flagged broken in May 2026 due to Chrome 148+ blocking CDP on the default profile and Zoom storing auth cookies as session-only. Stephen has since been running it successfully via cron, so the default assumption now is "try it, see what happens."
 
-If the script is ever fixed, output goes to:
+Output goes to:
 ```
 ~/Library/CloudStorage/Dropbox/<your-work-folder>/transcripts/
 ```
 
+#### 3d. Immediate sync fallback (run only if 3a/3b/3c didn't yield the transcript)
+
+If the file you need is not in any of the three locations above, trigger an on-demand sync of the source that should have it before reporting "not synced":
+
+```bash
+# Fireflies path (use when meeting was on a Fireflies-recorded call)
+/Users/stephenmorrell/git/fireflies_downloader/run_script.sh fireflies_downloader.py
+/Users/stephenmorrell/git/fireflies_downloader/run_script.sh format_transcripts.py
+
+# Zoom Docs path (use when meeting was Zoom-only and recorded by Zoom Companion)
+/Users/stephenmorrell/git/zoom_downloader/run_script.sh zoom_notes_downloader.py
+```
+
+Both scripts also run under cron every 5 minutes, but cron may not have fired since the meeting ended. Running them by hand pulls anything available right now.
+
+Decision rule:
+- If the user said "Fireflies was on the call" → run the Fireflies pair first.
+- If the user said "Zoom only" or did not mention Fireflies → run the Zoom script first.
+- If unsure, run both (they are independent and idempotent).
+
+After running, re-check the relevant folder. If the transcript is **still** missing, ask the user whether to (a) `ScheduleWakeup` and retry in ~20 min, or (b) proceed from the Apple Note + recollection alone. Do not silently give up.
+
 #### Transcript Priority
 
-Use whichever source has the most complete content:
-1. Fireflies `.txt` (usually fullest transcript with speaker labels and timestamps)
-2. Zoom Docs (AI-generated summary + transcript)
-3. Local Zoom `.vtt` or chat file
+Prefer Fireflies whenever it exists, even if a Zoom source looks more complete. Speaker names are worth more than raw completeness for an accurate who-said-what summary.
+1. Fireflies `.txt` (has speaker labels and timestamps; default choice)
+2. Zoom Docs (AI-generated summary + transcript; use only if no Fireflies)
+3. Local Zoom `.vtt` or chat file (last resort)
+
+### Step 3.5 — Identify speakers (replace generic labels)
+
+If the transcript has generic labels (`Speaker 1/2/3`), identify each from content cues before summarising: self-references, role/company, distinctive phrasing, who is asked what, timezone/logistics tells. Replace the generic labels with real names in BOTH the archived transcript copy and the summary, and record the basis for each ID (e.g. "Speaker 1 = Peter (East Coast, ex-iCAD)"). Only assign a name when the evidence is clear; otherwise leave the label and flag it as unresolved.
 
 ### Step 4 — Generate the Meeting Summary
 
@@ -230,13 +260,19 @@ For each action item assigned to the user that involves an external person, or a
 - **CC relevant stakeholders.** Search sent emails (`in:sent`) to the same person/org from the last 7 days to find who else was on the thread. Match the CC list.
 - **Use `--new` flag** when starting a new topic. Use `--reply-to` only when continuing an existing thread. Never auto-thread onto unrelated conversations.
 
-### Step 7b — Print Meeting Feedback
+### Step 7b — Honest Meeting Feedback (Apple Note, not terminal)
 
-After drafting emails, print to the terminal (not the Apple Note) an honest assessment of how the user could have done better in the meeting. Be specific, reference actual moments from the transcript. Cover:
-- Where they were too vague when they should have been specific
-- Where they let the other party deflect without pinning a commitment
-- Where they spent too long on a topic vs moving on
-- Tactical improvements for next time
+**MANDATORY.** After drafting emails, append an honest assessment of how the user could have done better in the meeting to the **Apple Note** as the permanent record. Do NOT put it in the terminal alone, since the terminal output is ephemeral and the user will not see it after the session closes.
+
+The feedback should:
+- Be specific, reference actual moments from the transcript or notes
+- Cover where the user was too vague when they should have been specific
+- Cover where the user let the other party deflect without pinning a commitment
+- Cover where the user spent too long on a topic vs moving on
+- Cover tactical improvements for next time
+- Sit under a clear `<h3>How to improve next time, honest feedback</h3>` section inside the meeting summary block that is appended to the Apple Note
+
+It is fine to also surface the feedback in the conversation reply for immediate visibility, but the canonical home is the Apple Note. The terminal is never the only place this lives.
 
 ### Step 8 — Save Transcript to Google Drive
 
@@ -291,6 +327,10 @@ When done, confirm each completed item:
 | Zoom local recordings | `~/Documents/Zoom/` |
 | Transcripts (Fireflies + Zoom) | `~/Library/CloudStorage/Dropbox/<your-work-folder>/transcripts/` |
 | Zoom Docs downloader | `~/git/zoom_downloader/zoom_notes_downloader.py` |
+| Zoom Docs cron wrapper | `~/git/zoom_downloader/run_script.sh zoom_notes_downloader.py` |
+| Fireflies downloader | `~/git/fireflies_downloader/fireflies_downloader.py` |
+| Fireflies formatter | `~/git/fireflies_downloader/format_transcripts.py` |
+| Fireflies cron wrapper | `~/git/fireflies_downloader/run_script.sh <script.py>` |
 | Google Drive agendas folder | `~/Library/CloudStorage/GoogleDrive-<your-work-email>/Shared drives/<your-shared-drive>/agendas-minutes-notes/` |
 
 ---
