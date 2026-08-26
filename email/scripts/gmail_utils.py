@@ -232,164 +232,12 @@ def format_quoted_reply_html(original_email: dict) -> str:
 </div>'''
 
 
-def _strip_prior_quotes_plain(text: str) -> str:
-    """Strip 'On X wrote:' quoted history from a plain-text message body.
-
-    Each message's own body_text typically already contains all prior messages
-    quoted below an attribution line like "On Tue, 23 Jun 2026 ..., Stephen Morrell wrote:".
-    When we flat-list every message in the thread, that nested history duplicates.
-    This helper returns only the message's own new content.
-    """
-    if not text:
-        return text
-    import re
-    lines = text.split('\n')
-    result = []
-    for line in lines:
-        # Stop at first attribution line ("On <date>, <sender> wrote:")
-        if re.match(r'^\s*On\s+.+wrote:\s*$', line):
-            break
-        # Also stop at NHSmail-style banner ("Begin forwarded message:")
-        if re.match(r'^\s*Begin forwarded message:\s*$', line):
-            break
-        # And at any line starting with '>' (already-quoted history)
-        stripped = line.lstrip()
-        if stripped.startswith('>'):
-            break
-        result.append(line)
-    return '\n'.join(result).rstrip()
-
-
-def _strip_prior_quotes_html(html: str) -> str:
-    """Strip Gmail-style quoted history from an HTML message body.
-
-    Removes the outermost gmail_quote div (and anything after it) so that
-    only the message's own new content remains. Falls back to blockquote
-    detection when no gmail_quote wrapper is present.
-    """
-    if not html:
-        return html
-    import re
-    # Kill anything from the first gmail_quote onwards (Gmail convention)
-    m = re.search(r'<div[^>]*class="[^"]*gmail_quote[^"]*"', html, re.IGNORECASE)
-    if m:
-        return html[:m.start()].rstrip()
-    # Fallback: strip from first blockquote onwards (most quoted history is in a blockquote)
-    m = re.search(r'<blockquote', html, re.IGNORECASE)
-    if m:
-        return html[:m.start()].rstrip()
-    return html
-
-
-def get_thread_history(service, thread_id: str) -> list:
-    """Fetch all non-draft messages in a thread as email dicts, oldest first.
-
-    Used to build a full-thread quoted reply so that recipients on clients
-    that do not render Gmail-style threading (NHS Outlook, mobile, shared
-    mailboxes) still see the complete conversation context in the body.
-    """
-    try:
-        thread = service.users().threads().get(
-            userId='me', id=thread_id, format='full'
-        ).execute()
-    except Exception:
-        return []
-
-    messages = []
-    for msg_data in thread.get('messages', []):
-        labels = msg_data.get('labelIds', [])
-        if 'DRAFT' in labels:
-            continue
-        headers = {h['name']: h['value'] for h in msg_data['payload'].get('headers', [])}
-        body_text, body_html = extract_body_both(msg_data['payload'])
-        messages.append({
-            'id': msg_data.get('id'),
-            'threadId': msg_data.get('threadId'),
-            'from': headers.get('From', 'Unknown'),
-            'to': headers.get('To', ''),
-            'subject': headers.get('Subject', '(No Subject)'),
-            'date': headers.get('Date', ''),
-            'message_id': headers.get('Message-ID', ''),
-            'references': headers.get('References', ''),
-            'body': body_text,
-            'body_html': body_html,
-            'internalDate': int(msg_data.get('internalDate', 0)),
-        })
-
-    messages.sort(key=lambda m: m['internalDate'])
-    return messages
-
-
-def format_full_thread_quote_html(service, thread_id: str, parent_email: dict) -> str:
-    """Format the entire thread as flat HTML blockquotes, most recent first.
-
-    Falls back to single-message quoting if the thread fetch fails or the
-    thread contains only the parent. Ensures recipients on clients that do
-    not auto-thread still see full prior context inline.
-    """
-    thread_msgs = get_thread_history(service, thread_id)
-    if not thread_msgs:
-        return format_quoted_reply_html(parent_email)
-
-    # Ensure parent is represented even if it did not appear in the thread fetch
-    # (e.g. race with a very recently sent message not yet indexed).
-    parent_id = parent_email.get('id')
-    if parent_id and not any(m.get('id') == parent_id for m in thread_msgs):
-        parent_copy = dict(parent_email)
-        parent_copy.setdefault('internalDate', 10 ** 18)  # force most-recent
-        thread_msgs.append(parent_copy)
-
-    if len(thread_msgs) == 1:
-        return format_quoted_reply_html(thread_msgs[0])
-
-    # Most recent first for top-down rendering below the new reply body.
-    ordered = sorted(thread_msgs, key=lambda m: m.get('internalDate', 0), reverse=True)
-
-    parts = ['<br><br>']
-    for msg in ordered:
-        from_addr = html_module.escape(msg.get('from', 'Unknown'))
-        date = html_module.escape(msg.get('date', ''))
-        if msg.get('body_html'):
-            # Strip nested quoted history so each message contributes only its own content
-            own_html = _strip_prior_quotes_html(msg['body_html'])
-            quoted_content = own_html
-        else:
-            own_text = _strip_prior_quotes_plain(msg.get('body', ''))
-            escaped = html_module.escape(own_text)
-            quoted_content = escaped.replace('\n', '<br>\n')
-        parts.append(f'''<div class="gmail_quote">
-<div dir="ltr" class="gmail_attr">On {date}, {from_addr} wrote:<br></div>
-<blockquote class="gmail_quote" style="margin:0px 0px 0px 0.8ex;border-left:1px solid rgb(204,204,204);padding-left:1ex">
-{quoted_content}
-</blockquote>
-</div>''')
-    return '\n'.join(parts)
-
-
-def format_full_thread_quote_plain(service, thread_id: str, parent_email: dict) -> str:
-    """Plain text version of full-thread quoting for the text/plain alternative."""
-    thread_msgs = get_thread_history(service, thread_id)
-    if not thread_msgs:
-        return format_quoted_reply(parent_email)
-
-    parent_id = parent_email.get('id')
-    if parent_id and not any(m.get('id') == parent_id for m in thread_msgs):
-        parent_copy = dict(parent_email)
-        parent_copy.setdefault('internalDate', 10 ** 18)
-        thread_msgs.append(parent_copy)
-
-    if len(thread_msgs) == 1:
-        return format_quoted_reply(thread_msgs[0])
-
-    ordered = sorted(thread_msgs, key=lambda m: m.get('internalDate', 0), reverse=True)
-    lines = []
-    for msg in ordered:
-        own_body = _strip_prior_quotes_plain(msg.get('body', ''))
-        lines.append(f"\n\nOn {msg.get('date', '')}, {msg.get('from', 'Unknown')} wrote:")
-        lines.append("")
-        for line in own_body.split('\n'):
-            lines.append(f"> {line}")
-    return '\n'.join(lines)
+# NOTE: full-thread quote assembly (get_thread_history / format_full_thread_quote_*)
+# was REMOVED 2026-08-26. Quoting must use ONLY the --reply-to parent message body
+# (format_quoted_reply*): the parent already embeds the history the correspondent
+# has seen. Iterating the Gmail threadId duplicates Outlook-embedded chains
+# (From:/Sent:/To: blocks survive any stripper) and is the documented BCC-broadcast
+# privacy leak (SKILL.md thread-quoting rule 8). Do not reintroduce.
 
 
 def find_latest_thread_message(service, email_address: str) -> str:
@@ -653,6 +501,7 @@ def create_message(to: str, subject: str, body: str, cc: str = None, bcc: str = 
         body_part = MIMEText(body)
 
     # If we have attachments, wrap in a mixed multipart
+    _LAST_ATTACHMENTS.clear()
     if attachments:
         message = MIMEMultipart('mixed')
         message.attach(body_part)
@@ -673,6 +522,14 @@ def create_message(to: str, subject: str, body: str, cc: str = None, bcc: str = 
             with open(filepath, 'rb') as f:
                 attachment_data = f.read()
 
+            # A file still being written/exported (or mid Dropbox sync) reads
+            # short. If the on-disk size no longer matches what we read, the
+            # file is unstable — refuse rather than email a truncated copy.
+            if os.path.getsize(filepath) != len(attachment_data):
+                raise RuntimeError(f"Refusing to attach {filename}: file changed size "
+                                   f"while being read (still being written or synced). "
+                                   f"Wait for it to finish, then retry.")
+
             # Integrity guard: never email a truncated/corrupt attachment.
             # Raising aborts draft/send so the problem is loud, not silent.
             problem = validate_attachment_integrity(filepath, attachment_data)
@@ -684,6 +541,8 @@ def create_message(to: str, subject: str, body: str, cc: str = None, bcc: str = 
             encoders.encode_base64(attachment)
             attachment.add_header('Content-Disposition', 'attachment', filename=filename)
             message.attach(attachment)
+            import hashlib as _hashlib
+            _LAST_ATTACHMENTS.append((filename, _hashlib.sha256(attachment_data).hexdigest(), len(attachment_data)))
             print(f"Attached: {filename} ({len(attachment_data)} bytes, integrity OK)")
     else:
         message = body_part
@@ -704,8 +563,72 @@ def create_message(to: str, subject: str, body: str, cc: str = None, bcc: str = 
     if references:
         message['References'] = references
 
-    raw = base64.urlsafe_b64encode(message.as_bytes()).decode()
+    # Serialize with CRLF line endings (RFC 5322). as_bytes() default emits
+    # bare LF; Gmail accepts that, but IMAP clients (Apple Mail) compute
+    # attachment sizes assuming CRLF and truncate ~1 byte per base64 line,
+    # corrupting every multi-line (i.e. non-trivial) attachment on open.
+    import email.policy
+    crlf_policy = email.policy.compat32.clone(linesep='\r\n')
+    raw = base64.urlsafe_b64encode(message.as_bytes(policy=crlf_policy)).decode()
     return raw, thread_id, to, subject, reply_to_id
+
+
+# Filled by create_message with (filename, sha256, size) per attachment so the
+# post-save verifier can hash-compare what Gmail actually stored.
+_LAST_ATTACHMENTS = []
+
+
+def verify_stored_attachments(service, message_id: str):
+    """Round-trip verify attachments on a just-saved draft/sent message.
+
+    Downloads each attachment back from Gmail, sha256-compares it against the
+    bytes read from disk at attach time, and structurally parses PDFs. Raises
+    RuntimeError on any mismatch so a corrupt attachment can never be saved
+    silently.
+    """
+    if not _LAST_ATTACHMENTS:
+        return
+    import hashlib
+    expected = {fn: (digest, size) for fn, digest, size in _LAST_ATTACHMENTS}
+    msg = service.users().messages().get(userId='me', id=message_id, format='full').execute()
+    found = {}
+
+    def walk(part):
+        for p in part.get('parts', []):
+            fn = p.get('filename')
+            if fn and p['body'].get('attachmentId'):
+                att = service.users().messages().attachments().get(
+                    userId='me', messageId=message_id, id=p['body']['attachmentId']).execute()
+                data = base64.urlsafe_b64decode(att['data'])
+                found[fn] = data
+            walk(p)
+
+    walk(msg['payload'])
+    problems = []
+    for fn, (digest, size) in expected.items():
+        data = found.get(fn)
+        if data is None:
+            problems.append(f"{fn}: missing from the saved message")
+            continue
+        got = hashlib.sha256(data).hexdigest()
+        if got != digest:
+            problems.append(f"{fn}: stored bytes differ from source ({len(data)} vs {size} bytes)")
+            continue
+        verdict = "sha256 match"
+        if fn.lower().endswith('.pdf'):
+            try:
+                import io
+                from pypdf import PdfReader
+                verdict = f"sha256 match, PDF parses ({len(PdfReader(io.BytesIO(data)).pages)} pages)"
+            except ImportError:
+                verdict = "sha256 match (pypdf not installed, parse check skipped)"
+            except Exception as e:
+                problems.append(f"{fn}: stored PDF fails to parse: {e}")
+                continue
+        print(f"Verified in Gmail: {fn} ({verdict})")
+    if problems:
+        raise RuntimeError("Attachment verification FAILED after save: " + "; ".join(problems) +
+                           ". Delete the draft and retry.")
 
 
 def create_draft(to: str, subject: str, body: str, cc: str = None, bcc: str = None,
@@ -722,6 +645,7 @@ def create_draft(to: str, subject: str, body: str, cc: str = None, bcc: str = No
         draft_body['message']['threadId'] = thread_id
 
     draft = service.users().drafts().create(userId='me', body=draft_body).execute()
+    verify_stored_attachments(service, draft['message']['id'])
     print(f"Draft created successfully!")
     print(f"Draft ID: {draft['id']}")
     print(f"To: {to}")
@@ -745,6 +669,7 @@ def send_email(to: str, subject: str, body: str, cc: str = None, bcc: str = None
         message_body['threadId'] = thread_id
 
     sent = service.users().messages().send(userId='me', body=message_body).execute()
+    verify_stored_attachments(service, sent['id'])
     print(f"Email sent successfully!")
     print(f"Message ID: {sent['id']}")
     print(f"To: {to}")
