@@ -291,6 +291,68 @@ def format_as_markdown(text):
     return '\n'.join(formatted_lines)
 
 
+def fetch_attachments(cursor):
+    """Fetch attachment metadata for all notes, keyed by note Z_PK.
+
+    Attachments are Z_ENT=4 rows in ZICCLOUDSYNCINGOBJECT linked via ZNOTE.
+    Saved links (e.g. tweets saved from X) are ZTYPEUTI='public.url' rows
+    carrying ZURLSTRING (source URL), ZTITLE (page/author title) and ZSUMMARY
+    (page text, e.g. the tweet body). Images carry ZOCRSUMMARY (recognised
+    text) and sometimes ZSUMMARY/ZTITLE. ZALTTEXT is a manual alt text.
+    """
+    attachment_ent = None
+    cursor.execute("SELECT Z_ENT FROM Z_PRIMARYKEY WHERE Z_NAME = 'ICAttachment'")
+    row = cursor.fetchone()
+    attachment_ent = row[0] if row else 4
+
+    cursor.execute("""
+        SELECT ZNOTE, ZTYPEUTI, ZURLSTRING, ZTITLE, ZSUMMARY, ZOCRSUMMARY,
+               ZALTTEXT, ZHANDWRITINGSUMMARY
+        FROM ZICCLOUDSYNCINGOBJECT
+        WHERE Z_ENT = ? AND ZNOTE IS NOT NULL
+        AND (ZMARKEDFORDELETION IS NULL OR ZMARKEDFORDELETION != 1)
+        ORDER BY Z_PK
+    """, (attachment_ent,))
+
+    by_note = {}
+    for note_pk, uti, url, title, summary, ocr, alt_text, handwriting in cursor.fetchall():
+        by_note.setdefault(note_pk, []).append({
+            'uti': uti or '', 'url': url, 'title': title,
+            'summary': summary, 'ocr': ocr, 'alt_text': alt_text,
+            'handwriting': handwriting,
+        })
+    return by_note
+
+
+def format_attachments_markdown(attachments):
+    """Render attachment metadata as a markdown section. Returns '' if none
+    of the attachments carry any useful metadata (URL, title, or text)."""
+    blocks = []
+    for att in attachments:
+        lines = []
+        title = (att['title'] or '').strip()
+        if title:
+            # Titles from saved links can be multi-line (author + like counts)
+            lines.append(f"**{title.splitlines()[0].strip()}**")
+            for extra in title.splitlines()[1:]:
+                if extra.strip():
+                    lines.append(extra.strip())
+        if att['url'] and att['url'].strip():
+            lines.append(f"<{att['url'].strip()}>")
+        for key, label in (('summary', None), ('ocr', 'Text in image'),
+                           ('alt_text', 'Alt text'), ('handwriting', 'Handwriting')):
+            val = (att[key] or '').strip()
+            if val:
+                prefix = f"{label}: " if label else ""
+                quoted = '\n'.join(f"> {l}" for l in f"{prefix}{val}".splitlines())
+                lines.append(quoted)
+        if lines:
+            blocks.append('\n'.join(lines))
+    if not blocks:
+        return ''
+    return "## Attachments\n\n" + '\n\n'.join(blocks)
+
+
 def sanitize_filename(name):
     """Create a safe filename from a note title."""
     if not name:
@@ -361,6 +423,8 @@ def main(output_dir=None):
 
     notes = cursor.fetchall()
     print(f"Found {len(notes)} notes to export")
+
+    attachments_by_note = fetch_attachments(cursor)
 
     exported_count = 0
     failed_count = 0
@@ -442,6 +506,14 @@ def main(output_dir=None):
         if not content_found and snippet:
             formatted_snippet = format_as_markdown(snippet)
             content_parts.append(formatted_snippet)
+            content_found = True
+
+        # Attachment metadata (saved-link URLs, tweet text, image OCR) —
+        # previously lost as a bare U+FFFC placeholder.
+        attachments_md = format_attachments_markdown(attachments_by_note.get(note_id, []))
+        if attachments_md:
+            content_parts.append("")
+            content_parts.append(attachments_md)
             content_found = True
 
         if not content_found:
