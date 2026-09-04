@@ -1,0 +1,61 @@
+{
+  "_README": "Term list for check_mannerisms.py. Extend the lists below as new tics are spotted. 'banned' = never acceptable in Stephen's writing. 'watch' = usually a tic but sometimes legitimate, so reported separately and does not fail the check on its own. 'allow_phrases' = exact strings that are genuine domain terminology and must never be flagged, even though they contain a banned/watch word.",
+
+  "_provenance": "Seeded from humanizer/SKILL.md plus the tics Stephen flagged in 20260901-monthly-report-v1.6 on 4 Sep 2026 (pivotal x5, 'Stated once:', 'lands' used figuratively, cadence, posture).",
+
+  "banned": [
+    {"term": "pivotal", "why": "significance inflation; say what actually changed"},
+    {"term": "testament to", "why": "AI vocabulary"},
+    {"term": "landscape", "why": "AI vocabulary", "allow": ["competitive landscape"]},
+    {"term": "underscore", "why": "AI vocabulary; use 'shows' or delete"},
+    {"term": "seamless", "why": "marketing filler"},
+    {"term": "intricate", "why": "AI vocabulary"},
+    {"term": "vibrant", "why": "AI vocabulary"},
+    {"term": "delve", "why": "AI vocabulary"},
+    {"term": "realm", "why": "AI vocabulary"},
+    {"term": "navigate the", "why": "AI vocabulary"},
+    {"term": "serves as", "why": "copula avoidance; use 'is'"},
+    {"term": "stands as", "why": "copula avoidance; use 'is'"},
+    {"term": "represents a", "why": "copula avoidance; use 'is'"},
+    {"term": "it is worth noting", "why": "filler; state the thing"},
+    {"term": "it is important to note", "why": "filler; state the thing"},
+    {"term": "stated once", "why": "de-duplication scaffolding leaking into prose; delete the label"},
+    {"term": "stated once:", "why": "same"},
+    {"term": "as stated above", "why": "scaffolding; cross-reference properly or repeat the fact"},
+    {"term": "not only", "why": "forced parallelism when paired with 'but also'"},
+    {"term": "isn't just", "why": "negative parallelism"},
+    {"term": "is not just", "why": "negative parallelism"},
+    {"term": "more than just", "why": "negative parallelism"}
+  ],
+
+  "watch": [
+    {"term": "lands", "why": "figurative 'lands on/with' is a tic; literal 'the quote lands' is fine",
+     "allow": ["lands in", "money lands", "cash lands", "quote lands", "nothing further lands"]},
+    {"term": "cadence", "why": "overused; 'rhythm', 'frequency' or name the interval",
+     "allow": ["monthly grant cadence"]},
+    {"term": "posture", "why": "overused; say the actual stance",
+     "allow": ["valuation posture", "fundraise posture"]},
+    {"term": "robust", "why": "usually filler, but real in grant terminology",
+     "allow": ["robust PPIE"]},
+    {"term": "signal", "why": "vague; say what was actually said or done"},
+    {"term": "meaningful", "why": "vague intensifier; quantify"},
+    {"term": "compelling", "why": "vague intensifier"},
+    {"term": "crucial", "why": "significance inflation"},
+    {"term": "vital", "why": "significance inflation"},
+    {"term": "leverage", "why": "corporate filler; 'use'"},
+    {"term": "that said", "why": "connective tic"},
+    {"term": "reads as", "why": "tic"},
+    {"term": "sits", "why": "figurative 'sits at/with' is a tic", "allow": ["sits on the board"]}
+  ],
+
+  "allow_phrases": [
+    "robust PPIE",
+    "valuation posture",
+    "fundraise posture",
+    "competitive landscape",
+    "monthly grant cadence"
+  ],
+
+  "em_dash_check": true,
+  "_em_dash_note": "Stephen's CLAUDE.md forbids em dashes in all writing for him. Always checked."
+}

@@ -31,6 +31,11 @@ Multi-phase workflow to generate comprehensive monthly board reports.
 These are non-negotiable. If you find yourself about to do otherwise, stop and re-read.
 
 - **Read `FEEDBACK_LOG.md` in the monthly-report skill before drafting.** Standing items are captured there.
+- **Run the `humanizer` skill on the report prose, then PROVE it with the checker.** This is a hard gate on delivery, not a nicety:
+  ```
+  python3 ~/.claude/skills/humanizer/check_mannerisms.py <the .docx>
+  ```
+  Exit 0 = deliverable. Exit 1 = fix and re-run. Do not report the month's file as finished on a FAIL. Why this is spelled out here: v1.6 (Sept 2026) shipped with `pivotal` five times, `Stated once:` left in the body as de-duplication scaffolding, and **72 em dashes** in breach of a standing CLAUDE.md rule, because this skill never mentioned humanizer and the drafting session discussed it 153 times without once invoking it. Discussion is not application. The exit code is the evidence.
 - **Source-extraction sub-agents default to Haiku.** Opus is reserved for Phase 5 synthesis only.
 - **Apple Notes consolidation filters by `YYYYMMDD-` filename prefix plus body `Updated:` line,** not by file mtime. (The apple-notes export re-touches every note's mtime each run, so mtime-based filtering passes through ~2,000 historical notes.)
 - **Zoom-downloader runs once per Zoom account per period** (using `--account-label <name>`) with per-account state files (`state-<name>.json`). Output lands in the transcripts folder so `consolidate_files.py` picks it up.
@@ -44,6 +49,10 @@ These are non-negotiable. If you find yourself about to do otherwise, stop and r
 Run the gstack `/retro` skill for the reporting period, e.g. `/retro global 60d` for a ~2-month period. The retro inspects all active git repos plus AI coding sessions on the machine and produces commits, LOC, contributor breakdown, AI-assisted percentage and a shipping-streak narrative.
 
 Save the output to `context_YYYYMMDD/summaries/gstack_retro.md` (the narrative) and `context_YYYYMMDD/summaries/gstack_retro.json` (the structured snapshot). The narrative becomes the source for the report's Engineering Velocity appendix; the JSON is kept for trend comparison run-over-run.
+
+## Phase 1e: Poll active Claude Code sessions (new, 2 Sep 2026)
+
+After Phase 1c/1d, run ListAgents and SendMessage every session that worked on company matters during the reporting period. Ask each for a short summary of anything board-relevant: deals and their terms, payments and disputes, commitments made, dated facts, risks, corrections to the draft narrative. Give guidance: factual bullets with dates, no speculation, flag anything they cannot verify. Fold replies into `context_YYYYMMDD/summaries/session_<name>_summary.md`. Sessions often hold corrections the documents don't (e.g. the DeepLook completion-denial detail, 2 Sep 2026).
 
 ## Phase 1d: gstack `/office-hours` (diagnose mode)
 
