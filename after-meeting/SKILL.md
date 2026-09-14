@@ -5,6 +5,8 @@ description: Post-meeting automation. Exports Apple Notes, finds the meeting not
 
 # After-Meeting Skill
 
+> **Local overrides:** if a file named `SKILL.local.md` exists in this skill's directory, STOP and read that file INSTEAD of the rest of this one. It is the user's private, machine-specific version (paths, folder layout, personal rules) and takes full precedence. This public file is the generic baseline. (`*.local.md` is gitignored.)
+
 Automate everything that happens after a meeting ends: find the notes and transcript, write a summary, update the Apple Note, draft emails, and archive the transcript.
 
 ## Trigger
@@ -102,7 +104,7 @@ The `zoom_notes_downloader.py` script at `~/git/zoom_downloader/zoom_notes_downl
 1. Use `claude-in-chrome` MCP tools to navigate `https://docs.zoom.us/recent` from within the live Chrome session and extract the transcript via JavaScript.
 2. Ask the user to open docs.zoom.us and copy the transcript manually.
 
-Historical note: The script was flagged broken in May 2026 due to Chrome 148+ blocking CDP on the default profile and Zoom storing auth cookies as session-only. Stephen has since been running it successfully via cron, so the default assumption now is "try it, see what happens."
+Historical note: The script was flagged broken in May 2026 due to Chrome 148+ blocking CDP on the default profile and Zoom storing auth cookies as session-only. it has since been running successfully via cron, so the default assumption now is "try it, see what happens."
 
 Output goes to:
 ```
@@ -115,11 +117,11 @@ If the file you need is not in any of the three locations above, trigger an on-d
 
 ```bash
 # Fireflies path (use when meeting was on a Fireflies-recorded call)
-/Users/stephenmorrell/git/fireflies_downloader/run_script.sh fireflies_downloader.py
-/Users/stephenmorrell/git/fireflies_downloader/run_script.sh format_transcripts.py
+~/git/fireflies_downloader/run_script.sh fireflies_downloader.py
+~/git/fireflies_downloader/run_script.sh format_transcripts.py
 
 # Zoom Docs path (use when meeting was Zoom-only and recorded by Zoom Companion)
-/Users/stephenmorrell/git/zoom_downloader/run_script.sh zoom_notes_downloader.py
+~/git/zoom_downloader/run_script.sh zoom_notes_downloader.py
 ```
 
 Both scripts also run under cron every 5 minutes, but cron may not have fired since the meeting ended. Running them by hand pulls anything available right now.

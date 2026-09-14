@@ -875,6 +875,126 @@ def delete_draft(draft_id: str):
             return False
 
 
+def _resolve_draft(service, some_id: str):
+    """Resolve a draft ID or message ID to (draft_id, full draft resource)."""
+    try:
+        d = service.users().drafts().get(userId='me', id=some_id, format='full').execute()
+        return d['id'], d
+    except Exception:
+        try:
+            drafts = service.users().drafts().list(userId='me', maxResults=200).execute()
+            for item in drafts.get('drafts', []):
+                if item.get('message', {}).get('id') == some_id:
+                    d = service.users().drafts().get(userId='me', id=item['id'], format='full').execute()
+                    return d['id'], d
+        except Exception:
+            pass
+    return None, None
+
+
+def _list_attachment_names(payload):
+    """Collect attachment filenames from a message payload."""
+    names = []
+
+    def walk(part):
+        if part.get('filename'):
+            names.append(part['filename'])
+        for p in part.get('parts', []) or []:
+            walk(p)
+
+    walk(payload)
+    return names
+
+
+def read_draft(draft_id: str):
+    """Read the CURRENT server-side content of a draft (the ground truth,
+    including any edits the user made in Gmail since the draft was created)."""
+    service = get_gmail_service()
+    did, d = _resolve_draft(service, draft_id)
+    if not d:
+        print(f"No draft found with ID or message ID: {draft_id}", file=sys.stderr)
+        sys.exit(1)
+    msg = d['message']
+    headers = {h['name']: h['value'] for h in msg['payload']['headers']}
+    text_body, html_body = extract_body_both(msg['payload'])
+    attachments = _list_attachment_names(msg['payload'])
+
+    print(f"Draft ID: {did}")
+    print(f"Message ID: {msg['id']}")
+    print(f"Thread ID: {msg.get('threadId', '')}")
+    print(f"To: {headers.get('To', '')}")
+    if headers.get('Cc'):
+        print(f"Cc: {headers.get('Cc')}")
+    if headers.get('Bcc'):
+        print(f"Bcc: {headers.get('Bcc')}")
+    print(f"Subject: {headers.get('Subject', '(No Subject)')}")
+    if attachments:
+        print(f"Attachments: {', '.join(attachments)}")
+    print("-" * 60)
+    print(f"Body (plain):\n{text_body}")
+    if html_body:
+        print("-" * 60)
+        print(f"Body (html):\n{html_body}")
+    return d
+
+
+def update_draft(draft_id: str, body: str, to: str = None, subject: str = None,
+                 cc: str = None, bcc: str = None, attachments: list = None):
+    """Update an existing draft IN PLACE (same draft ID, same thread).
+
+    Recipients/subject default to the draft's current values. Reply headers
+    (In-Reply-To/References) and threadId are preserved so a reply stays a
+    reply. NOTE: Gmail replaces the whole message on update, so attachments
+    the user added by hand are dropped unless re-passed via --attach; this
+    function warns when that would happen.
+    """
+    import email as email_lib
+
+    service = get_gmail_service()
+    did, d = _resolve_draft(service, draft_id)
+    if not d:
+        print(f"No draft found with ID or message ID: {draft_id}", file=sys.stderr)
+        sys.exit(1)
+    msg = d['message']
+    headers = {h['name']: h['value'] for h in msg['payload']['headers']}
+
+    existing_attachments = _list_attachment_names(msg['payload'])
+    if existing_attachments and not attachments:
+        print(f"WARNING: draft currently has attachments ({', '.join(existing_attachments)}) "
+              f"which will be DROPPED by this update. Re-run with --attach to keep them.",
+              file=sys.stderr)
+
+    to = to or headers.get('To')
+    subject = subject if subject is not None else headers.get('Subject', '')
+    cc = cc or headers.get('Cc')
+    bcc = bcc or headers.get('Bcc')
+
+    # Build the new MIME with new_thread=True so create_message does not go
+    # hunting for threads: we already know the thread from the draft itself.
+    raw, _tid, to, subject, _r = create_message(
+        to, subject, body, cc, bcc, None, True, attachments, False
+    )
+
+    # Preserve reply linkage headers from the existing draft.
+    mime = email_lib.message_from_bytes(base64.urlsafe_b64decode(raw))
+    for hdr in ('In-Reply-To', 'References'):
+        if headers.get(hdr) and not mime.get(hdr):
+            mime[hdr] = headers[hdr]
+    raw = base64.urlsafe_b64encode(mime.as_bytes()).decode()
+
+    body_obj = {'message': {'raw': raw}}
+    if msg.get('threadId'):
+        body_obj['message']['threadId'] = msg['threadId']
+
+    updated = service.users().drafts().update(userId='me', id=did, body=body_obj).execute()
+    verify_stored_attachments(service, updated['message']['id'])
+    print("Draft updated in place.")
+    print(f"Draft ID: {updated['id']}")
+    print(f"To: {to}")
+    print(f"Subject: {subject}")
+    return updated
+
+
 def read_email(message_id: str):
     """Read a specific email by ID."""
     service = get_gmail_service()
@@ -965,6 +1085,21 @@ def main():
     delete_parser = subparsers.add_parser('delete-draft', help='Delete a draft email')
     delete_parser.add_argument('--id', required=True, help='Draft ID or message ID')
 
+    # Read draft command (live server-side content, incl. user edits)
+    read_draft_parser = subparsers.add_parser('read-draft', help='Read current content of a draft (ground truth incl. user edits)')
+    read_draft_parser.add_argument('--id', required=True, help='Draft ID or message ID')
+
+    # Update draft command (in-place revision preserving draft ID + thread)
+    update_parser = subparsers.add_parser('update-draft', help='Update an existing draft in place (same draft ID/thread)')
+    update_parser.add_argument('--id', required=True, help='Draft ID or message ID')
+    update_parser.add_argument('--body', required=True, help='New email body (replaces current body)')
+    update_parser.add_argument('--to', help='Override recipient (defaults to current)')
+    update_parser.add_argument('--subject', help='Override subject (defaults to current)')
+    update_parser.add_argument('--cc', help='Override CC (defaults to current)')
+    update_parser.add_argument('--bcc', help='Override BCC (defaults to current)')
+    update_parser.add_argument('--attach', action='append', dest='attachments', metavar='FILE',
+                               help='Attach a file (must re-pass existing attachments or they are dropped)')
+
     args = parser.parse_args()
 
     # Set the account before any API calls
@@ -996,6 +1131,10 @@ def main():
             read_email(args.id)
         elif args.command == 'delete-draft':
             delete_draft(args.id)
+        elif args.command == 'read-draft':
+            read_draft(args.id)
+        elif args.command == 'update-draft':
+            update_draft(args.id, args.body, args.to, args.subject, args.cc, args.bcc, args.attachments)
     except Exception as e:
         print(f"Error: {e}", file=sys.stderr)
         sys.exit(1)

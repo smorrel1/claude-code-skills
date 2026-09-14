@@ -296,3 +296,7 @@ python3 scripts/my_script.py [options]
 ## License
 
 MIT License - feel free to use, modify, and share.
+
+## Local overrides (private data stays out of git)
+
+Skills that carry user-specific configuration (accounts, addresses, personal file paths, private workflow rules) keep the public `SKILL.md` generic. The private version lives in `SKILL.local.md` in the same skill directory, which is gitignored (`*.local.md`). Each participating `SKILL.md` opens with a pointer instructing the agent to read `SKILL.local.md` INSTEAD when it exists, so the private version takes full precedence at load time while never reaching the repository. To personalise a skill: `cp SKILL.md SKILL.local.md` inside the skill folder and edit the local copy.

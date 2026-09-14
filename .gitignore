@@ -76,3 +76,11 @@ env/
 
 # Zoom downloader state
 state.json
+
+# Local overrides
+*.local.md
+SKILL.local.md
+email/known-contacts.md
+email/ATTACHMENT-DEBUGGING.md
+email/scripts/gmail_cleanup.py
+email/scripts/outbox_audit.py

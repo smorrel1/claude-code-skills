@@ -5,6 +5,8 @@ description: Email integration for reading, searching, and drafting emails with 
 
 # Email Utils
 
+> **Local overrides:** if a file named `SKILL.local.md` exists in this skill's directory, STOP and read that file INSTEAD of the rest of this one. It is the user's private, machine-specific version (accounts, addresses, personal rules) and takes full precedence. This public file is the generic baseline. (`*.local.md` is gitignored.)
+
 Read, search, and draft emails using the Gmail API with OAuth credentials.
 
 ## CRITICAL: Use this skill for every email request, explicit OR implied
