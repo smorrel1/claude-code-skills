@@ -13,6 +13,7 @@
     <x-metadata>
         <output encoding="utf-8" content-type="text/x-oeb1-document"></output>
         {% if cover_image %}
+        <meta name="cover" content="cover"/>
         <EmbeddedCover>{{ cover_image }}</EmbeddedCover>
         {% endif %}
     </x-metadata>

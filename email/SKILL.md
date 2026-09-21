@@ -40,10 +40,18 @@ Why this matters:
 - The user may have already sent the very thing you are about to draft, or answered a point you are about to raise.
 - Sent messages are the ground truth for "what has the user actually said to this person," more so than drafts or your own memory of the session.
 
-Required check (run before composing or summarising thread state):
+Required check (run before composing or summarising thread state). **Prefer the
+single-call `thread-state` command** — it answers sent/draft/received/ball-in-whose-court
+in ONE lookup (cached 10 min) and exists precisely because dozens of repeated
+`search` calls per session were measured as the #1 friction sink (14 Sep 2026):
 ```bash
+python3 ~/.claude/skills/email/scripts/gmail_utils.py --account <acct> thread-state --with <addr>
+# legacy narrower check if you only need sent status:
 python3 ~/.claude/skills/email/scripts/gmail_utils.py --account <acct> search --query "in:sent to:<addr>" --max 5
 ```
+Do NOT chain repeated `search` calls to reconstruct a correspondent's state — one
+`thread-state` call gives message statuses (labelIds-verified), open drafts, and
+last-in/last-out in a single response. Add `--no-cache` if you just changed state.
 Then read the top result if its date is newer than what you last saw. Reconcile any surprise (a sent copy of your draft, a message you did not write) with the user before proceeding. Do not assume the thread is frozen since your last action.
 
 ## CRITICAL: Never infer sent-vs-draft status from headers — verify it

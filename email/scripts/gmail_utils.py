@@ -995,6 +995,113 @@ def update_draft(draft_id: str, body: str, to: str = None, subject: str = None,
     return updated
 
 
+def thread_state(addr: str, days: int = 90, max_msgs: int = 12, no_cache: bool = False):
+    """One-call thread state for a correspondent: replaces the 20-lookup
+    verification loop. Returns and prints, for the given address:
+      - every recent message classified SENT / DRAFT / SCHEDULED / INBOX
+      - a summary: last outbound, last inbound, open drafts, scheduled sends
+    Results are cached for 10 minutes per (account, addr) so repeated status
+    checks within a task cost zero API calls (pass --no-cache to force).
+    """
+    import time as _time
+    cache_path = os.path.expanduser('~/.claude/skills/email/.thread-state-cache.json')
+    key = f"{CURRENT_ACCOUNT}:{addr.lower()}"
+    cache = {}
+    if os.path.exists(cache_path):
+        try:
+            cache = json.load(open(cache_path))
+        except Exception:
+            cache = {}
+    ent = cache.get(key)
+    if ent and not no_cache and _time.time() - ent['ts'] < 600:
+        print(ent['report'] + "\n[cached %ds ago; --no-cache to refresh]" % int(_time.time() - ent['ts']))
+        return ent['report']
+
+    service = get_gmail_service()
+    lines = []
+    msgs = {}
+    for q in (f"to:{addr} newer_than:{days}d", f"from:{addr} newer_than:{days}d",
+              f"in:scheduled to:{addr}"):
+        try:
+            r = service.users().messages().list(userId='me', q=q, maxResults=max_msgs).execute()
+            for mm in r.get('messages', []) or []:
+                msgs[mm['id']] = None
+        except Exception:
+            pass
+    addr_lc = addr.lower()
+
+    def placement(h, status):
+        """Where does addr sit on this message? Direct-ness matters:
+        To = addressed, Cc = copied, from = they wrote it, thread = neither."""
+        if addr_lc in h.get('From', '').lower():
+            return 'from-them'
+        if addr_lc in h.get('To', '').lower():
+            return 'To-them' if status in ('SENT', 'DRAFT') else 'To'
+        if addr_lc in h.get('Cc', '').lower():
+            return 'Cc-them' if status in ('SENT', 'DRAFT') else 'Cc'
+        return 'thread'
+
+    detailed = []
+    for mid in list(msgs)[: max_msgs * 2]:
+        try:
+            m = service.users().messages().get(
+                userId='me', id=mid, format='metadata',
+                metadataHeaders=['From', 'To', 'Cc', 'Subject', 'Date']).execute()
+            h = {x['name']: x['value'] for x in m['payload']['headers']}
+            L = m.get('labelIds', [])
+            status = ('DRAFT' if 'DRAFT' in L else
+                      'SENT' if 'SENT' in L else
+                      'INBOX' if 'INBOX' in L else ','.join(L[:2]) or 'OTHER')
+            detailed.append((int(m.get('internalDate', 0)), status, h, m['id'],
+                             m.get('threadId'), placement(h, status)))
+        except Exception:
+            continue
+    detailed.sort(reverse=True)
+
+    from datetime import datetime as _dt
+    last_out = last_in = last_cc = None
+    drafts = []
+    for ts, status, h, mid, tid, pl in detailed:
+        if status == 'SENT' and pl == 'To-them' and last_out is None:
+            last_out = (ts, h)
+        if status == 'SENT' and pl == 'Cc-them' and last_cc is None:
+            last_cc = (ts, h)
+        if status == 'INBOX' and pl == 'from-them' and last_in is None:
+            last_in = (ts, h)
+        if status == 'DRAFT':
+            drafts.append((ts, h, mid))
+
+    def fmt(ts):
+        return _dt.fromtimestamp(ts / 1000).strftime('%a %d %b %H:%M')
+
+    lines.append(f"THREAD STATE with {addr} (account={CURRENT_ACCOUNT}, last {days}d)")
+    lines.append(f"  last SENT To them:   " + (f"{fmt(last_out[0])}  {last_out[1].get('Subject','')[:60]}" if last_out else "none in window (direct To only)"))
+    if last_cc and (not last_out or last_cc[0] > last_out[0]):
+        lines.append(f"  last Cc'd them:      {fmt(last_cc[0])}  {last_cc[1].get('Subject','')[:60]}  (Cc, not addressed)")
+    lines.append(f"  last FROM them:      " + (f"{fmt(last_in[0])}  {last_in[1].get('Subject','')[:60]}" if last_in else "none in window"))
+    lines.append(f"  open DRAFTS to them: {len(drafts)}")
+    for ts, h, mid in drafts:
+        lines.append(f"    - DRAFT {fmt(ts)}  {h.get('Subject','')[:55]}  (msg {mid})")
+    if last_out and last_in:
+        lines.append(f"  ball in {'THEIR' if last_out[0] > last_in[0] else 'YOUR'} court "
+                     f"({'awaiting their reply' if last_out[0] > last_in[0] else 'they wrote last - reply owed'})"
+                     f" — judged on direct To-them sends only; Cc does not count as contacting them")
+    elif last_in and not last_out:
+        lines.append("  ball in YOUR court (they have written; you have never sent direct To them in window)")
+    lines.append("  recent messages (placement = where they sit on that message):")
+    for ts, status, h, mid, tid, pl in detailed[:max_msgs]:
+        frm = h.get('From', '')[:28]
+        lines.append(f"    {fmt(ts)}  {status:9} [{pl:9}] {frm:30} {h.get('Subject','')[:44]}  (msg {mid} thread {tid})")
+    report = '\n'.join(lines)
+    print(report)
+    cache[key] = {'ts': _time.time(), 'report': report}
+    try:
+        json.dump(cache, open(cache_path, 'w'))
+    except Exception:
+        pass
+    return report
+
+
 def read_email(message_id: str):
     """Read a specific email by ID."""
     service = get_gmail_service()
@@ -1085,6 +1192,12 @@ def main():
     delete_parser = subparsers.add_parser('delete-draft', help='Delete a draft email')
     delete_parser.add_argument('--id', required=True, help='Draft ID or message ID')
 
+    # Thread-state command (one-call correspondent status, cached 10 min)
+    ts_parser = subparsers.add_parser('thread-state', help='One-call thread state for a correspondent (sent/draft/inbox/scheduled + ball-in-whose-court)')
+    ts_parser.add_argument('--with', dest='with_addr', required=True, help='Correspondent email address')
+    ts_parser.add_argument('--days', type=int, default=90)
+    ts_parser.add_argument('--no-cache', action='store_true')
+
     # Read draft command (live server-side content, incl. user edits)
     read_draft_parser = subparsers.add_parser('read-draft', help='Read current content of a draft (ground truth incl. user edits)')
     read_draft_parser.add_argument('--id', required=True, help='Draft ID or message ID')
@@ -1131,6 +1244,8 @@ def main():
             read_email(args.id)
         elif args.command == 'delete-draft':
             delete_draft(args.id)
+        elif args.command == 'thread-state':
+            thread_state(args.with_addr, args.days, no_cache=args.no_cache)
         elif args.command == 'read-draft':
             read_draft(args.id)
         elif args.command == 'update-draft':

@@ -480,6 +480,185 @@ def text_to_html(text: str, title: str = "YouTube Transcript", url: str = None) 
     return '\n'.join(html_parts)
 
 
+def ensure_jpeg(path: str) -> str:
+    """Guarantee the image at `path` is a real JPEG; convert in place if not.
+
+    YouTube frequently serves thumbnails as WebP even from URLs ending .jpg.
+    Amazon's Send-to-Kindle conversion silently drops a cover whose bytes
+    don't match its declared image/jpeg media-type, leaving the generic DOC
+    placeholder. Returns the path on success, None if conversion failed.
+    """
+    try:
+        with open(path, 'rb') as f:
+            magic = f.read(3)
+        if magic == b'\xff\xd8\xff':
+            return path  # already JPEG
+        converted = path + '.converted.jpg'
+        result = subprocess.run(
+            ['sips', '-s', 'format', 'jpeg', path, '--out', converted],
+            capture_output=True, text=True, timeout=60
+        )
+        if result.returncode == 0 and os.path.exists(converted):
+            with open(converted, 'rb') as f:
+                if f.read(3) == b'\xff\xd8\xff':
+                    shutil.move(converted, path)
+                    print(f"Cover image converted to JPEG (was non-JPEG bytes)", file=sys.stderr)
+                    return path
+        try:
+            os.remove(converted)
+        except OSError:
+            pass
+        # Fallback: PIL if available
+        try:
+            from PIL import Image
+            Image.open(path).convert('RGB').save(path, 'JPEG', quality=90)
+            print("Cover image converted to JPEG via PIL", file=sys.stderr)
+            return path
+        except Exception:
+            pass
+        print("Warning: cover image is not JPEG and conversion failed; "
+              "Kindle may show a placeholder cover", file=sys.stderr)
+        return None
+    except Exception as e:
+        print(f"Warning: could not validate cover image: {e}", file=sys.stderr)
+        return None
+
+
+def compose_cover(image_path: str, title: str, author: str = None,
+                  output_path: str = None) -> str:
+    """Compose a portrait Kindle cover (1600x2560) from a landscape/squarish
+    graphic: artwork full-bleed in the lower part, title typeset above it on a
+    gradient background derived from the artwork's colours.
+
+    Returns the composed cover path, or None on failure (caller should fall
+    back to the raw image). Requires PIL.
+    """
+    try:
+        from PIL import Image, ImageDraw, ImageFont, ImageFilter
+    except ImportError:
+        print("Warning: PIL not available; using raw image as cover", file=sys.stderr)
+        return None
+
+    W, H = 1600, 2560
+    try:
+        art = Image.open(image_path).convert('RGB')
+
+        # -- palette from the artwork --
+        small = art.resize((64, 36))
+        avg = small.resize((1, 1)).getpixel((0, 0))
+        base = tuple(int(c * 0.28) for c in avg)          # darkened backdrop tone
+        # accent: most saturated*bright colour from an 8-colour quantization
+        pal_img = small.quantize(colors=8).convert('RGB')
+        colors = {pal_img.getpixel((x, y)) for x in range(pal_img.width)
+                  for y in range(pal_img.height)}
+        def sat_score(c):
+            mx, mn = max(c), min(c)
+            return (mx - mn) * (mx / 255.0)
+        accent = max(colors, key=sat_score)
+        if sat_score(accent) < 40:                        # grayscale artwork
+            accent = (201, 168, 106)                      # muted gold
+
+        # -- background: vertical gradient base -> near-black --
+        cover = Image.new('RGB', (W, H))
+        top = tuple(min(255, int(c * 1.6)) for c in base)
+        bottom = tuple(int(c * 0.35) for c in base)
+        px = cover.load()
+        for y in range(H):
+            t = y / H
+            row = tuple(int(top[i] + (bottom[i] - top[i]) * t) for i in range(3))
+            for x in range(W):
+                px[x, y] = row
+        # faint enlarged blur of the artwork behind everything for texture
+        blur = art.resize((W, int(W * art.height / art.width))).filter(
+            ImageFilter.GaussianBlur(60)).point(lambda p: int(p * 0.25))
+        cover.paste(blur, (0, H - blur.height))
+
+        # -- artwork placement: full width, lower part of the canvas --
+        art_w = W
+        art_h = int(art.height * (W / art.width))
+        max_art_h = int(H * 0.5)
+        if art_h > max_art_h:                             # squarish: crop height
+            art_h = max_art_h
+            scaled = art.resize((art_w, int(art.height * (W / art.width))))
+            off = (scaled.height - art_h) // 2
+            scaled = scaled.crop((0, off, art_w, off + art_h))
+        else:
+            scaled = art.resize((art_w, art_h))
+        art_y = int(H * 0.92) - art_h                     # sits low, margin below
+        # soft shadow above artwork
+        shadow = Image.new('RGB', (W, 60), (0, 0, 0))
+        cover.paste(shadow.point(lambda p: p), (0, art_y - 8))
+        cover.paste(scaled, (0, art_y))
+        draw = ImageDraw.Draw(cover)
+        draw.rectangle([0, art_y - 6, W, art_y - 1], fill=accent)  # accent keyline
+
+        # -- typography in the top block --
+        font_path = '/System/Library/Fonts/Supplemental/Georgia Bold.ttf'
+        font_path_reg = '/System/Library/Fonts/Supplemental/Georgia.ttf'
+        margin = 130
+        block_w = W - 2 * margin
+        block_h = art_y - 260                             # text area above artwork
+
+        def wrap(text, font):
+            words, lines, cur = text.split(), [], ''
+            for w_ in words:
+                trial = (cur + ' ' + w_).strip()
+                if draw.textlength(trial, font=font) <= block_w:
+                    cur = trial
+                else:
+                    if cur:
+                        lines.append(cur)
+                    cur = w_
+            if cur:
+                lines.append(cur)
+            return lines
+
+        size = 170
+        while size > 70:
+            font = ImageFont.truetype(font_path, size)
+            lines = wrap(title, font)
+            line_h = int(size * 1.18)
+            if len(lines) * line_h <= block_h - 160 and len(lines) <= 5:
+                break
+            size -= 10
+        total_text_h = len(lines) * line_h
+
+        y = max(150, (block_h - total_text_h) // 2)
+        ink = (242, 240, 235)
+        for ln in lines:
+            lw = draw.textlength(ln, font=font)
+            draw.text(((W - lw) / 2, y), ln, font=font, fill=ink)
+            y += line_h
+
+        # accent rule + author under the title
+        y += 30
+        rule_w = 360
+        draw.rectangle([(W - rule_w) / 2, y, (W + rule_w) / 2, y + 8], fill=accent)
+        if author:
+            y += 60
+            asize = 62
+            afont = ImageFont.truetype(font_path_reg, asize)
+            while draw.textlength(author, font=afont) > block_w and asize > 40:
+                asize -= 4
+                afont = ImageFont.truetype(font_path_reg, asize)
+            alines = ([author] if draw.textlength(author, font=afont) <= block_w
+                      else wrap(author, afont))
+            for al in alines:
+                aw = draw.textlength(al, font=afont)
+                draw.text(((W - aw) / 2, y), al, font=afont,
+                          fill=(216, 213, 205))
+                y += int(asize * 1.3)
+
+        out = output_path or (image_path + '.composed.jpg')
+        cover.save(out, 'JPEG', quality=90)
+        print(f"Composed portrait cover: {out}", file=sys.stderr)
+        return out
+    except Exception as e:
+        print(f"Warning: cover composition failed ({e}); using raw image",
+              file=sys.stderr)
+        return None
+
+
 def download_thumbnail(url: str, output_path: str = None) -> str:
     """Download YouTube video thumbnail. Returns path to downloaded image.
 
@@ -527,6 +706,9 @@ def download_thumbnail(url: str, output_path: str = None) -> str:
                     return None
                 urllib.request.urlretrieve(thumbnail_url, output_path)
                 print(f"Thumbnail downloaded: {output_path}", file=sys.stderr)
+                if ensure_jpeg(output_path) is None:
+                    _cleanup_on_failure()
+                    return None
                 return output_path
     except Exception as e:
         print(f"Warning: Could not download thumbnail: {e}", file=sys.stderr)
@@ -610,9 +792,28 @@ def text_to_epub(text: str, title: str = "YouTube Transcript",
     # Copy cover image if provided
     cover_filename = None
     if cover_image and os.path.exists(cover_image):
-        ext = os.path.splitext(cover_image)[1] or '.jpg'
-        cover_filename = f'cover{ext}'
-        shutil.copy(cover_image, os.path.join(build_dir, cover_filename))
+        # Always normalize to a real JPEG named cover.jpg — a WebP/PNG with a
+        # .jpg extension makes Amazon's Send-to-Kindle drop the cover.
+        cover_filename = 'cover.jpg'
+        cover_build_path = os.path.join(build_dir, cover_filename)
+        shutil.copy(cover_image, cover_build_path)
+        if ensure_jpeg(cover_build_path) is None:
+            os.remove(cover_build_path)
+            cover_filename = None
+        else:
+            # A proper book cover is portrait (~0.625 w/h). Landscape or
+            # squarish graphics (video thumbnails) render as a thin band in
+            # Kindle's library, so compose a designed portrait cover instead.
+            try:
+                from PIL import Image as _Img
+                with _Img.open(cover_build_path) as _im:
+                    aspect = _im.width / _im.height
+                if aspect > 0.75:
+                    composed = compose_cover(cover_build_path, title, author)
+                    if composed:
+                        shutil.move(composed, cover_build_path)
+            except Exception as e:
+                print(f"Warning: cover aspect check failed: {e}", file=sys.stderr)
 
     # Render templates
     env = Environment(loader=FileSystemLoader(template_dir))
@@ -643,9 +844,15 @@ def text_to_epub(text: str, title: str = "YouTube Transcript",
 
     opf_path = os.path.join(build_dir, 'book.opf')
 
+    convert_cmd = ['ebook-convert', opf_path, output_path]
+    if cover_filename:
+        # Explicit --cover makes Calibre embed the cover canonically
+        # (correct <meta name="cover"> + titlepage), which Kindle respects.
+        convert_cmd += ['--cover', os.path.join(build_dir, cover_filename)]
+
     try:
         result = subprocess.run(
-            ['ebook-convert', opf_path, output_path],
+            convert_cmd,
             capture_output=True,
             text=True,
             timeout=120

@@ -110,6 +110,8 @@ python3 scripts/youtube_transcript.py --to-epub transcript_structured.txt \
 
 For X.com videos, use `--cover` with a local image if you have one, or omit for no cover.
 
+**Cover handling (automatic, added 20 Sep 2026):** the script normalizes every cover to a real JPEG (YouTube serves WebP behind .jpg URLs; Amazon's Send-to-Kindle silently drops a mislabeled cover and shows a generic DOC placeholder), and when the graphic is landscape/squarish (aspect w/h > 0.75, i.e. any video thumbnail) it composes a designed 1600x2560 portrait cover: title set in Georgia Bold in the top block, accent rule and author line (both auto-fitted), artwork full-bleed in the lower half, background gradient and accent colour derived from the artwork. A true portrait cover image passes through untouched. Requires PIL for composition (falls back to the raw JPEG without it).
+
 ### Step 5: Send to Kindle
 
 ```bash
