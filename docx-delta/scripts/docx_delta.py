@@ -87,6 +87,44 @@ def word_diff(a, b):
     return aw, bw, difflib.SequenceMatcher(None, aw, bw, autojunk=False).get_opcodes()
 
 
+
+def pair_block(old_texts, new_texts, threshold=0.5):
+    """Pair paragraphs inside a replace block by similarity, not by position.
+
+    Positional pairing mis-pairs as soon as a paragraph is inserted in the
+    middle of a rewritten stretch: every later pair is compared against the
+    wrong partner, and a light edit reads as a heavy one. This finds the
+    non-crossing pairing with the best total similarity (a small dynamic
+    program; replace blocks are short), leaving anything below the threshold
+    unpaired, to be reported as a plain add or delete.
+
+    Returns (pairs, old_unpaired, new_unpaired) as index lists.
+    """
+    n, m = len(old_texts), len(new_texts)
+    ratio = [[difflib.SequenceMatcher(None, old_texts[i], new_texts[j]).ratio()
+              for j in range(m)] for i in range(n)]
+    # best[i][j] = best score using old[i:] and new[j:]
+    best = [[0.0] * (m + 1) for _ in range(n + 1)]
+    for i in range(n - 1, -1, -1):
+        for j in range(m - 1, -1, -1):
+            skip = max(best[i + 1][j], best[i][j + 1])
+            take = (ratio[i][j] + best[i + 1][j + 1]) if ratio[i][j] >= threshold else 0.0
+            best[i][j] = max(skip, take)
+    pairs, i, j = [], 0, 0
+    while i < n and j < m:
+        take = (ratio[i][j] + best[i + 1][j + 1]) if ratio[i][j] >= threshold else -1.0
+        if take >= best[i][j] - 1e-9 and ratio[i][j] >= threshold:
+            pairs.append((i, j)); i += 1; j += 1
+        elif best[i + 1][j] >= best[i][j + 1]:
+            i += 1
+        else:
+            j += 1
+    paired_o = {a for a, _ in pairs}
+    paired_n = {b for _, b in pairs}
+    return (pairs, [i for i in range(n) if i not in paired_o],
+            [j for j in range(m) if j not in paired_n])
+
+
 def align(old_blocks, new_blocks):
     """Paragraph-level alignment, on normalised text so spacing is not a change."""
     norm = lambda t: re.sub(r"\s+", " ", t).strip()
@@ -125,6 +163,32 @@ def _wrap(parent, tag, runs, idx, stamp):
     for r in runs:
         el.append(r)
     return el
+
+
+
+def check_partition(stats, n_old, n_new, mode):
+    """Every paragraph must be accounted for, or the report is lying.
+
+    changed + added + unchanged must cover the new document, and
+    changed + deleted + unchanged must cover the old one. On 30 Sep 2026 the
+    redline silently dropped 23 new paragraphs and still printed a confident
+    set of counts; the HTML mode disagreed and nothing said so. Fail loudly.
+    """
+    new_side = stats["changed"] + stats["added"] + stats["equal"]
+    old_side = stats["changed"] + stats["deleted"] + stats["equal"]
+    problems = []
+    if new_side != n_new:
+        problems.append("new document has %d comparable paragraphs but the counts "
+                        "cover %d (changed %d + added %d + unchanged %d)"
+                        % (n_new, new_side, stats["changed"], stats["added"], stats["equal"]))
+    if old_side != n_old:
+        problems.append("old document has %d comparable paragraphs but the counts "
+                        "cover %d (changed %d + deleted %d + unchanged %d)"
+                        % (n_old, old_side, stats["changed"], stats["deleted"], stats["equal"]))
+    if problems:
+        raise RuntimeError("%s mode did not account for every paragraph:\n  %s\n"
+                           "The delta is incomplete; do not use it."
+                           % (mode, "\n  ".join(problems)))
 
 
 def redline_docx(old_path, new_path, out_path):
@@ -190,14 +254,29 @@ def redline_docx(old_path, new_path, out_path):
                                              [_make_run(para._p, "".join(bw[b1:b2]), rPr)],
                                              idx, stamp))
                 stats["changed"] += 1
+            # A replace block whose new side is LONGER leaves surplus new
+            # paragraphs beyond the positional pairs. They used to be left as
+            # plain text: unmarked, uncounted, and read as unchanged, which hid
+            # about 23 genuinely new paragraphs in a Science Pack redline on
+            # 30 Sep 2026 and made the docx counts disagree with the HTML.
+            for k in range(j1 + (i2 - i1), j2):
+                para = nb[k]["para"]
+                rPr = _rpr_of(para)
+                runs = [_make_run(para._p, para.text, rPr)]
+                for r in list(para._p.findall(qn('w:r'))):
+                    para._p.remove(r)
+                idx += 1
+                para._p.append(_wrap(para._p, 'w:ins', runs, idx, stamp))
+                stats["added"] += 1
 
+    check_partition(stats, len(ob), len(nb), "redline docx")
     new.save(out_path)
     return stats
 
 
 # ------------------------------------------------------------------ html / text
 
-def html_report(old_path, new_path, out_path, stats_only=False):
+def html_report(old_path, new_path, out_path, stats_only=False, pairing='positional'):
     ob, nb = blocks(Document(old_path)), blocks(Document(new_path))
     rows = []
     stats = {"equal": 0, "changed": 0, "added": 0, "deleted": 0}
@@ -213,6 +292,19 @@ def html_report(old_path, new_path, out_path, stats_only=False):
             for k in range(i1, i2):
                 stats["deleted"] += 1
                 rows.append(("deleted", ob[k]["where"], ob[k]["text"], ""))
+        elif pairing == 'similarity':
+            pairs, un_o, un_n = pair_block([x["text"] for x in ob[i1:i2]],
+                                           [x["text"] for x in nb[j1:j2]])
+            for a, b in pairs:
+                stats["changed"] += 1
+                rows.append(("changed", nb[j1 + b]["where"],
+                             ob[i1 + a]["text"], nb[j1 + b]["text"]))
+            for b in un_n:
+                stats["added"] += 1
+                rows.append(("added", nb[j1 + b]["where"], "", nb[j1 + b]["text"]))
+            for a in un_o:
+                stats["deleted"] += 1
+                rows.append(("deleted", ob[i1 + a]["where"], ob[i1 + a]["text"], ""))
         else:
             for off in range(max(i2 - i1, j2 - j1)):
                 o = ob[i1 + off]["text"] if i1 + off < i2 else ""
@@ -228,6 +320,7 @@ def html_report(old_path, new_path, out_path, stats_only=False):
                     stats["deleted"] += 1
                     rows.append(("deleted", where, o, ""))
 
+    check_partition(stats, len(ob), len(nb), "html")
     if stats_only:
         return stats, rows
 
@@ -291,6 +384,11 @@ def main():
     ap.add_argument("new")
     ap.add_argument("-o", "--out", help="output .docx (tracked changes) or .html")
     ap.add_argument("--md", action="store_true", help="print a unified text diff")
+    ap.add_argument("--pair", choices=["positional", "similarity"], default="positional",
+                    help="how to pair paragraphs inside a rewritten block. positional "
+                         "(default) pairs them in order; similarity pairs each old "
+                         "paragraph with the new one it most resembles and reports the "
+                         "rest as plain adds and deletes. Report modes only")
     a = ap.parse_args()
 
     for p in (a.old, a.new):
@@ -301,11 +399,17 @@ def main():
         print(md_report(a.old, a.new))
         return 0
 
-    stats, rows = html_report(a.old, a.new, None, stats_only=True)
+    if a.pair == "similarity" and a.out and a.out.lower().endswith(".docx"):
+        sys.exit("--pair similarity is report-only: the redline pairs positionally.\n"
+                 "Mixing them would make the docx counts disagree with the HTML, which\n"
+                 "is the defect this tool was fixed for on 30 Sep 2026. Run them\n"
+                 "separately: the redline for Word, the HTML for the pairing you want.")
+
+    stats, rows = html_report(a.old, a.new, None, stats_only=True, pairing=a.pair)
     if a.out and a.out.lower().endswith(".docx"):
         stats = redline_docx(a.old, a.new, a.out)
     elif a.out:
-        html_report(a.old, a.new, a.out)
+        html_report(a.old, a.new, a.out, pairing=a.pair)
 
     print("%s  ->  %s" % (os.path.basename(a.old), os.path.basename(a.new)))
     print("  changed   %d paragraph(s)" % stats["changed"])

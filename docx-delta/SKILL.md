@@ -11,6 +11,7 @@ python3 $D old.docx new.docx                      # counts, to the terminal
 python3 $D old.docx new.docx -o delta.docx        # redline, tracked changes
 python3 $D old.docx new.docx -o delta.html        # side-by-side, for reading
 python3 $D old.docx new.docx --md                 # unified text diff
+python3 $D old.docx new.docx --pair similarity -o delta.html   # see below
 ```
 
 ## Which output
@@ -44,6 +45,35 @@ Say so when reporting; a diff that quietly skips content is worse than none.
 - Footnotes, endnotes, comments, headers and footers are counted and named in the
   output, not diffed.
 - Images, charts and styling are not compared. This is a text delta.
+
+## Counts must partition both documents
+
+Every run checks that changed + added + unchanged covers the new document and
+changed + deleted + unchanged covers the old one, and fails loudly if not. Until
+30 Sep 2026 the redline silently dropped the surplus new paragraphs of a
+rewritten block: they stayed in the file as plain text, so about 23 genuinely
+new paragraphs read as unchanged and the docx counts disagreed with the HTML.
+Both modes now report the same figures. `tests/test_delta.py` covers it:
+
+```bash
+python3 ~/.claude/skills/docx-delta/tests/test_delta.py
+```
+
+## Pairing inside a rewritten block
+
+By default, paragraphs inside a rewritten stretch are paired in order. That is
+right when text was edited in place and wrong when a paragraph was inserted in
+the middle, since every later pair is then compared against the wrong partner.
+
+`--pair similarity` pairs each old paragraph with the new one it most resembles
+and reports the rest as plain adds and deletes. It gives a truer picture of
+which paragraph became which, and it moves heavily rewritten paragraphs out of
+"changed" into a delete plus an add. On a real 161-paragraph pack the default
+read 52 changed / 32 added / 0 deleted, and similarity read 32 / 52 / 20.
+
+It is report-only. Asking for it with a `.docx` output is refused rather than
+silently ignored, because a redline built one way and counts printed the other
+is exactly the defect above.
 
 ## Gotchas
 
