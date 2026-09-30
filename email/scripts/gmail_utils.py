@@ -308,7 +308,71 @@ def _get_self_email(service) -> str:
     return _SELF_EMAIL_CACHE[key]
 
 
-def redirect_replyto_to_latest(service, reply_to_id: str) -> str:
+
+def self_addresses(service) -> set:
+    """Every address that is Stephen, not a correspondent.
+
+    The authenticated account plus every address in config.json, which is
+    gitignored. Deriving "the other party" from a message's To header fails
+    when the message was self-addressed with the real recipients in Bcc: on
+    30 Sep 2026 a draft was filed in an unrelated helpdesk thread that way, and
+    quoted that ticket to someone who had never been on it.
+    """
+    out = set()
+    me = _get_self_email(service)
+    if me:
+        out.add(me)
+    import json as _json
+    try:
+        cfg = _json.load(open(os.path.join(os.path.dirname(os.path.dirname(
+            os.path.abspath(__file__))), 'config.json')))
+    except (OSError, ValueError):
+        return out
+    for group in (cfg.get('accounts') or {}).values():
+        for acct in (group or {}).values():
+            addr = ((acct or {}).get('email') or '').lower()
+            if '@' in addr:
+                out.add(addr)
+    # gmail.com and googlemail.com are the same mailbox.
+    for a in list(out):
+        if a.endswith('@gmail.com'):
+            out.add(a[:-len('gmail.com')] + 'googlemail.com')
+        elif a.endswith('@googlemail.com'):
+            out.add(a[:-len('googlemail.com')] + 'gmail.com')
+    return out
+
+
+def thread_includes(service, message_id: str, address: str) -> bool:
+    """Is this address anywhere in the thread's From, To, Cc or Bcc?
+
+    Threading a reply onto a conversation the recipient was never part of
+    quotes other people's correspondence to them. Checked before any auto-
+    chosen thread is used.
+    """
+    address = (address or '').lower()
+    if not address:
+        return True
+    try:
+        msg = service.users().messages().get(
+            userId='me', id=message_id, format='metadata',
+            metadataHeaders=['From', 'To', 'Cc', 'Bcc']).execute()
+        thread = service.users().threads().get(
+            userId='me', id=msg['threadId'], format='metadata',
+            metadataHeaders=['From', 'To', 'Cc', 'Bcc']).execute()
+    except Exception:
+        return True          # cannot tell; do not block on an API hiccup
+    for m in thread.get('messages', []):
+        # Skip drafts. A draft already misfiled in this thread names the
+        # recipient, which would vouch for the very thread it should not be in.
+        if 'DRAFT' in (m.get('labelIds') or []):
+            continue
+        for h in m.get('payload', {}).get('headers', []):
+            if h['name'] in ('From', 'To', 'Cc', 'Bcc') and address in h['value'].lower():
+                return True
+    return False
+
+
+def redirect_replyto_to_latest(service, reply_to_id: str, correspondent_hint: str = None) -> str:
     """Auto-correct a stale explicit --reply-to target.
 
     Given a reply-to message ID, find the most recent NON-DRAFT message
@@ -327,17 +391,24 @@ def redirect_replyto_to_latest(service, reply_to_id: str) -> str:
         return reply_to_id
 
     headers = {h['name']: h['value'] for h in meta.get('payload', {}).get('headers', [])}
-    self_email = _get_self_email(service)
+    mine = self_addresses(service)
     from_email = _extract_email(headers.get('From', ''))
     to_email = _extract_email(headers.get('To', ''))
 
-    # The correspondent is whichever party is not us.
-    if from_email and from_email != self_email:
+    # The correspondent is whichever party is not us. "Us" is every address in
+    # config.json, not just the authenticated one: a KCL address in To is still
+    # Stephen, and treating it as the correspondent redirects to whatever he
+    # last exchanged with himself.
+    if correspondent_hint:
+        correspondent = _extract_email(correspondent_hint)
+    elif from_email and from_email not in mine:
         correspondent = from_email
-    elif to_email and to_email != self_email:
+    elif to_email and to_email not in mine:
         correspondent = to_email
     else:
-        correspondent = from_email or to_email
+        # Self-addressed, real recipients in Bcc. There is no correspondent to
+        # follow, so stay where we are rather than redirect on a bad guess.
+        return reply_to_id
     if not correspondent or correspondent.endswith('@kindle.com'):
         return reply_to_id
 
@@ -506,6 +577,7 @@ def create_message(to: str, subject: str, body: str, cc: str = None, bcc: str = 
     service = get_gmail_service()
 
     thread_id = None
+    auto_threaded = False
     in_reply_to = None
     references = None
     use_html = False
@@ -532,14 +604,34 @@ def create_message(to: str, subject: str, body: str, cc: str = None, bcc: str = 
         else:
             auto_reply_id = find_latest_thread_message(service, email_addr)
             if auto_reply_id:
+                # This lookup already returned the LATEST traffic with this
+                # person, so the stale-reply redirect below has nothing to add
+                # and everything to get wrong: on 30 Sep 2026 it re-derived the
+                # correspondent from a self-addressed message's To header, got
+                # one of the sender's own addresses, and moved the draft into an
+                # unrelated helpdesk thread.
                 reply_to_id = auto_reply_id
+                auto_threaded = True
                 print(f"Auto-replying to existing thread (use --new to start fresh thread)")
 
     # An explicitly supplied reply-to may be stale (an old message in an old
     # thread). Unless the caller forces the original thread or wants a new one,
     # redirect to the most recent non-draft traffic with the same correspondent.
-    if reply_to_id and not new_thread and not force_thread:
-        reply_to_id = redirect_replyto_to_latest(service, reply_to_id)
+    if reply_to_id and not new_thread and not force_thread and not auto_threaded:
+        reply_to_id = redirect_replyto_to_latest(service, reply_to_id, correspondent_hint=to)
+
+    # Never quote a conversation to somebody who was never on it. The thread is
+    # dropped rather than used, so the draft goes out as a new thread with no
+    # quoted history. --keep-thread overrides, for the case where the sender
+    # genuinely wants to forward a thread onward.
+    if reply_to_id and to and not force_thread:
+        recipient = _extract_email(to)
+        if recipient and not thread_includes(service, reply_to_id, recipient):
+            print("WARNING: the most recent thread with %s does not contain that address\n"
+                  "         in From, To, Cc or Bcc, so replying there would quote other\n"
+                  "         people's correspondence to them. Starting a new thread instead.\n"
+                  "         Pass --keep-thread to thread on it anyway." % recipient)
+            reply_to_id = None
 
     # If replying to an existing message, fetch it and include quoted text
     if reply_to_id:

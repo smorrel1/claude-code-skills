@@ -84,3 +84,6 @@ email/known-contacts.md
 email/ATTACHMENT-DEBUGGING.md
 email/scripts/gmail_cleanup.py
 email/scripts/outbox_audit.py
+
+# Live test cases naming real addresses and message ids
+*live-cases.local.json

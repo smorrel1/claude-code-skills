@@ -77,6 +77,32 @@ PY
 
 When reporting status to the user, state it explicitly and only after this check — "the Ming P.S. is still a **draft** (04:14), not sent." Never let a draft's save-time masquerade as a send. This pairs with the CLAUDE.md rule to refer to every email by **status + time**: the time is meaningless if the status is guessed wrong.
 
+## Threading guards (added 2026-09-30 after a misthreaded draft)
+
+Three guards now sit in `create_message`, after a draft to an NHS address was
+filed in an unrelated helpdesk thread and quoted that ticket to someone who had
+never been on it:
+
+1. **The auto-thread path no longer runs the stale-reply redirect.** The lookup
+   already returns the latest traffic with that person, so the redirect could
+   only get it wrong. It did: it re-derived the correspondent from a
+   self-addressed message's `To` header.
+2. **Every configured address counts as self**, from `config.json`, plus the
+   gmail/googlemail twin. A message addressed to one of your own addresses with
+   the real recipients in Bcc yields no correspondent, so the target is left
+   alone instead of redirected on a guess.
+3. **The recipient must actually be on the thread.** Before using an
+   auto-chosen thread, the messages are checked for that address in From, To,
+   Cc or Bcc. If it is absent the thread is dropped, with a warning, and the
+   draft starts a new one, so other people's correspondence is never quoted to
+   them. Drafts in the thread do not count as evidence, or a misfiled draft
+   would vouch for the thread it should not be in. `--keep-thread` overrides.
+
+```bash
+python3 ~/.claude/skills/email/tests/test_threading.py          # logic
+python3 ~/.claude/skills/email/tests/test_threading.py --live   # the real case
+```
+
 ## CRITICAL: Always thread onto the most RELEVANT recent correspondence
 
 **MANDATORY.** Before drafting ANY email to a person, you MUST identify the most **topically relevant** recent thread with that person and thread the new draft onto it.
