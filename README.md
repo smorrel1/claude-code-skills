@@ -21,6 +21,7 @@ Skills are reusable modules that extend Claude Code's capabilities. Each skill p
 | [interview-transcript](#interview-transcript) | YouTube/X.com transcript to Kindle EPUB | yt-dlp + Calibre |
 | [monthly-report](#monthly-report) | Monthly board report generation | Custom paths + OAuth |
 | [ce-to-510k](#ce-to-510k) | Port CE Mark / UKCA technical files to FDA 510(k) for AI/ML SaMD | None |
+| [docx-delta](#docx-delta) | Compare two Word documents, redline with tracked changes | python-docx |
 
 ---
 
@@ -300,3 +301,30 @@ MIT License - feel free to use, modify, and share.
 ## Local overrides (private data stays out of git)
 
 Skills that carry user-specific configuration (accounts, addresses, personal file paths, private workflow rules) keep the public `SKILL.md` generic. The private version lives in `SKILL.local.md` in the same skill directory, which is gitignored (`*.local.md`). Each participating `SKILL.md` opens with a pointer instructing the agent to read `SKILL.local.md` INSTEAD when it exists, so the private version takes full precedence at load time while never reaching the repository. To personalise a skill: `cp SKILL.md SKILL.local.md` inside the skill folder and edit the local copy.
+
+---
+
+## docx-delta
+
+Compare two Word documents and get a delta view. Replaces Word's Review Compare
+feature and LibreOffice's headless compare, which is unreliable to automate.
+
+```bash
+D=~/.claude/skills/docx-delta/scripts/docx_delta.py
+python3 $D old.docx new.docx                  # counts only
+python3 $D old.docx new.docx -o delta.docx    # redline with real tracked changes
+python3 $D old.docx new.docx -o delta.html    # side by side, for reading
+python3 $D old.docx new.docx --md             # unified text diff
+```
+
+The `.docx` output carries genuine `w:ins` and `w:del` markup, so Word's Review
+pane shows the changes and Accept and Reject work.
+
+Paragraphs are aligned first, then words are compared inside each changed
+paragraph, so a single edited figure is visible in a long paragraph.
+
+**What it compares:** body paragraphs and table cell text. Footnotes, endnotes,
+comments, headers and footers are counted and named in the output, not compared.
+Images and styling are not compared.
+
+**Requires:** `python-docx` (`pip install python-docx`). No Word, no LibreOffice.
