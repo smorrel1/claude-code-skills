@@ -257,8 +257,8 @@ def redline_docx(old_path, new_path, out_path):
             # A replace block whose new side is LONGER leaves surplus new
             # paragraphs beyond the positional pairs. They used to be left as
             # plain text: unmarked, uncounted, and read as unchanged, which hid
-            # about 23 genuinely new paragraphs in a Science Pack redline on
-            # 30 Sep 2026 and made the docx counts disagree with the HTML.
+            # about 23 genuinely new paragraphs in a real redline and made the
+            # docx counts disagree with the HTML.
             for k in range(j1 + (i2 - i1), j2):
                 para = nb[k]["para"]
                 rPr = _rpr_of(para)
