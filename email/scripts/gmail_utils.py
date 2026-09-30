@@ -12,6 +12,8 @@ from email.mime.base import MIMEBase
 from email.mime.application import MIMEApplication
 from email import encoders
 import mimetypes
+import re
+from datetime import datetime
 import html as html_module
 from pathlib import Path
 
@@ -367,13 +369,136 @@ def redirect_replyto_to_latest(service, reply_to_id: str) -> str:
     return latest_id
 
 
+
+def internal_domains():
+    """Domains treated as inside the organisation, from config.json.
+
+    config.json is gitignored, so the company's own domains stay out of the
+    public repo. Every address in accounts.work contributes its domain; with no
+    config readable, nothing is internal and the warning always fires, which is
+    the safe direction.
+    """
+    import json as _json
+    try:
+        cfg = _json.load(open(os.path.join(os.path.dirname(os.path.dirname(
+            os.path.abspath(__file__))), 'config.json')))
+    except (OSError, ValueError):
+        return set()
+    out = set()
+    for acct in (cfg.get('accounts', {}).get('work') or {}).values():
+        addr = (acct or {}).get('email', '')
+        if '@' in addr:
+            out.add(addr.rsplit('@', 1)[-1].lower())
+    return out
+
+
+def _attachment_part(filepath: str):
+    """One attachment, with every integrity guard applied. None if missing.
+
+    Shared by the ordinary and the inline modes so that neither can drift into
+    sending a truncated file: the size-stability check, the structural PDF/docx
+    check, and the sha256 recorded for the round-trip verification all live
+    here rather than in the loop that happens to be running.
+    """
+    import hashlib as _hashlib
+    filepath = os.path.expanduser(filepath)
+    if not os.path.exists(filepath):
+        print(f"Warning: Attachment not found: {filepath}")
+        return None
+
+    filename = os.path.basename(filepath)
+    mime_type, _ = mimetypes.guess_type(filepath)
+    if mime_type is None:
+        mime_type = 'application/octet-stream'
+    maintype, subtype = mime_type.split('/', 1)
+
+    with open(filepath, 'rb') as f:
+        attachment_data = f.read()
+
+    # A file still being written/exported (or mid Dropbox sync) reads short. If
+    # the on-disk size no longer matches what we read, the file is unstable:
+    # refuse rather than email a truncated copy.
+    if os.path.getsize(filepath) != len(attachment_data):
+        raise RuntimeError(f"Refusing to attach {filename}: file changed size "
+                           f"while being read (still being written or synced). "
+                           f"Wait for it to finish, then retry.")
+
+    problem = validate_attachment_integrity(filepath, attachment_data)
+    if problem:
+        raise RuntimeError(f"Refusing to attach corrupt file. {problem}")
+
+    part = MIMEBase(maintype, subtype)
+    part.set_payload(attachment_data)
+    encoders.encode_base64(part)
+    part.add_header('Content-Disposition', 'attachment', filename=filename)
+    return part, filename, _hashlib.sha256(attachment_data).hexdigest(), len(attachment_data)
+
+
+def split_body_for_inline(body: str, filenames: list, is_html: bool):
+    """Cut the body after each filename so its attachment can follow it.
+
+    Returns (segments, order) where segments[i] is the text that precedes
+    attachment order[i], and segments[-1] is whatever is left over. A filename
+    the body never mentions keeps its attachment, placed at the end, and says so.
+
+    Matching is on the basename as written in the body. The files are numbered
+    in the body ("1. 20260930-...docx"), so the cut goes after the end of that
+    line, or after the closing tag of the list item in HTML.
+    """
+    segments, order, rest = [], [], body
+    tail_tags = ('</li>', '<br>', '<br/>', '<br />', '</p>', '</div>')
+    for name in filenames:
+        idx = rest.find(name)
+        if idx < 0:
+            continue
+        cut = idx + len(name)
+        if is_html:
+            # Take the smallest closing tag that follows, so the attachment
+            # lands after the whole list item rather than inside it.
+            ends = [rest.find(t, cut) + len(t) for t in tail_tags if rest.find(t, cut) >= 0]
+            if ends:
+                cut = min(ends)
+        else:
+            nl = rest.find('\n', cut)
+            cut = len(rest) if nl < 0 else nl + 1
+        segments.append(rest[:cut])
+        order.append(name)
+        rest = rest[cut:]
+    segments.append(rest)
+    return segments, order
+
+
+
+def _segment_part(text: str, body_has_html: bool, use_html: bool):
+    """One chunk of body between two attachments, in the same flavour as the whole.
+
+    HTML bodies keep a text/plain twin, so Outlook and Exchange clients that
+    fall back to plain text do not see raw tags (the reason the single-part
+    path builds multipart/alternative too).
+    """
+    if not (body_has_html or use_html):
+        return MIMEText(text)
+    if body_has_html:
+        html = f'<div dir="ltr">{text}</div>'
+        plain = _html_to_plain(text)
+    else:
+        html = '<div dir="ltr">' + html_module.escape(text).replace('\n', '<br>\n') + '</div>'
+        plain = text
+    alt = MIMEMultipart('alternative')
+    alt.attach(MIMEText(plain, 'plain'))
+    alt.attach(MIMEText(html, 'html'))
+    return alt
+
+
 def create_message(to: str, subject: str, body: str, cc: str = None, bcc: str = None,
                    reply_to_id: str = None, new_thread: bool = False, attachments: list = None,
-                   force_thread: bool = False):
+                   force_thread: bool = False, inline_attachments: bool = False):
     """Create an email message, automatically replying to existing thread unless --new is specified.
 
     Args:
         attachments: List of file paths to attach to the email.
+        inline_attachments: Place each attachment in the body immediately after
+            the line naming it, instead of all of them after the whole body.
 
     Returns:
         tuple: (raw_message, thread_id, to, subject, reply_to_id)
@@ -502,48 +627,67 @@ def create_message(to: str, subject: str, body: str, cc: str = None, bcc: str = 
 
     # If we have attachments, wrap in a mixed multipart
     _LAST_ATTACHMENTS.clear()
-    if attachments:
+    if attachments and inline_attachments:
+        # Each attachment sits directly under the line that names it, so a
+        # numbered list of files reads as "1. <name>", the file, "2. <name>",
+        # the file. Ordinary mode puts every attachment after the whole body,
+        # which for a pack of several documents leaves the reader matching
+        # names to icons by hand.
+        #
+        # Deliberately NOT Content-ID/cid: these are documents, not images, and
+        # a cid part without an <img> referencing it is hidden by some clients.
+        #
+        # INTERNAL USE ONLY. Field report the same day it was built: Apple Mail's
+        # compose window shows blank gaps and a blue placeholder, and Outlook
+        # renders only the FIRST body section and turns the rest into
+        # ATT00001.htm attachments. The recipient sees a truncated email with
+        # junk files. Warn whenever this leaves the company.
+        _to_domain = (_extract_email(to or '') or '').rsplit('@', 1)[-1].lower()
+        if _to_domain and _to_domain not in internal_domains():
+            print("")
+            print("  WARNING: --attach-inline with an external recipient (%s)." % (to,))
+            print("  Outlook shows only the first section of the body and turns the rest")
+            print("  into ATT00001.htm attachments; Apple Mail's compose view looks broken.")
+            print("  Use plain --attach with a numbered list of filenames in the body instead.")
+            print("")
+        message = MIMEMultipart('mixed')
+        parts, names = [], []
+        for filepath in attachments:
+            built = _attachment_part(filepath)
+            if built is None:
+                continue
+            parts.append(built[0])
+            names.append(built[1])
+            _LAST_ATTACHMENTS.append((built[1], built[2], built[3]))
+            print(f"Attached inline: {built[1]} ({built[3]} bytes, integrity OK)")
+
+        segments, order = split_body_for_inline(body, names, body_has_html or use_html)
+        by_name = dict(zip(names, parts))
+        placed = set()
+        for seg, name in zip(segments, order):
+            message.attach(_segment_part(seg, body_has_html, use_html))
+            message.attach(by_name[name])
+            placed.add(name)
+        # Whatever body is left, then any file the body never named.
+        if segments[-1].strip() or use_html:
+            tail = segments[-1] + (format_quoted_reply_html(original) if use_html and original else "")
+            message.attach(_segment_part(tail, body_has_html, use_html))
+        for name in names:
+            if name not in placed:
+                print(f"NOTE: the body never names {name}; attaching it at the end.")
+                message.attach(by_name[name])
+    elif attachments:
         message = MIMEMultipart('mixed')
         message.attach(body_part)
 
         for filepath in attachments:
-            filepath = os.path.expanduser(filepath)
-            if not os.path.exists(filepath):
-                print(f"Warning: Attachment not found: {filepath}")
+            built = _attachment_part(filepath)
+            if built is None:
                 continue
-
-            filename = os.path.basename(filepath)
-            mime_type, _ = mimetypes.guess_type(filepath)
-            if mime_type is None:
-                mime_type = 'application/octet-stream'
-
-            maintype, subtype = mime_type.split('/', 1)
-
-            with open(filepath, 'rb') as f:
-                attachment_data = f.read()
-
-            # A file still being written/exported (or mid Dropbox sync) reads
-            # short. If the on-disk size no longer matches what we read, the
-            # file is unstable — refuse rather than email a truncated copy.
-            if os.path.getsize(filepath) != len(attachment_data):
-                raise RuntimeError(f"Refusing to attach {filename}: file changed size "
-                                   f"while being read (still being written or synced). "
-                                   f"Wait for it to finish, then retry.")
-
-            # Integrity guard: never email a truncated/corrupt attachment.
-            # Raising aborts draft/send so the problem is loud, not silent.
-            problem = validate_attachment_integrity(filepath, attachment_data)
-            if problem:
-                raise RuntimeError(f"Refusing to attach corrupt file. {problem}")
-
-            attachment = MIMEBase(maintype, subtype)
-            attachment.set_payload(attachment_data)
-            encoders.encode_base64(attachment)
-            attachment.add_header('Content-Disposition', 'attachment', filename=filename)
-            message.attach(attachment)
-            import hashlib as _hashlib
-            _LAST_ATTACHMENTS.append((filename, _hashlib.sha256(attachment_data).hexdigest(), len(attachment_data)))
-            print(f"Attached: {filename} ({len(attachment_data)} bytes, integrity OK)")
+            part, filename, sha, size = built
+            message.attach(part)
+            _LAST_ATTACHMENTS.append((filename, sha, size))
+            print(f"Attached: {filename} ({size} bytes, integrity OK)")
     else:
         message = body_part
 
@@ -563,14 +707,39 @@ def create_message(to: str, subject: str, body: str, cc: str = None, bcc: str = 
     if references:
         message['References'] = references
 
-    # Serialize with CRLF line endings (RFC 5322). as_bytes() default emits
-    # bare LF; Gmail accepts that, but IMAP clients (Apple Mail) compute
-    # attachment sizes assuming CRLF and truncate ~1 byte per base64 line,
-    # corrupting every multi-line (i.e. non-trivial) attachment on open.
+    raw = encode_raw(message)
+    return raw, thread_id, to, subject, reply_to_id
+
+
+def encode_raw(message) -> str:
+    """Serialize a MIME message for the Gmail API `raw` field. THE ONLY SAFE WAY.
+
+    Never use base64.urlsafe_b64encode(msg.as_bytes()) for a message you upload:
+    as_bytes() defaults to bare LF line endings. Gmail stores the bare LFs, API
+    round-trips stay byte-identical (so API-side hash checks pass), but Apple
+    Mail's IMAP fetch of the draft truncates the attachment (~1 byte per 78-byte
+    base64 line; the PDF loses its xref/trailer/%%EOF and will not open). When
+    Stephen then touches the draft in Mail.app, Mail re-saves the truncated copy
+    to Gmail and the corruption becomes permanent everywhere, web UI included.
+    Reproduced 28 Sep 2026 (Chandan/NYP draft). This serializes with CRLF and
+    refuses to return anything containing a bare LF.
+    """
     import email.policy
     crlf_policy = email.policy.compat32.clone(linesep='\r\n')
-    raw = base64.urlsafe_b64encode(message.as_bytes(policy=crlf_policy)).decode()
-    return raw, thread_id, to, subject, reply_to_id
+    data = message.as_bytes(policy=crlf_policy)
+    bare_lf = data.count(b'\n') - data.count(b'\r\n')
+    if bare_lf:
+        raise RuntimeError(f"encode_raw: {bare_lf} bare LF line endings after CRLF "
+                           f"serialization; refusing to upload (IMAP clients would "
+                           f"truncate attachments).")
+    return base64.urlsafe_b64encode(data).decode()
+
+
+def raw_bare_lf_count(service, message_id: str) -> int:
+    """Bare-LF count in the message as Gmail stores it (the IMAP-corruption proxy)."""
+    m = service.users().messages().get(userId='me', id=message_id, format='raw').execute()
+    data = base64.urlsafe_b64decode(m['raw'])
+    return data.count(b'\n') - data.count(b'\r\n')
 
 
 # Filled by create_message with (filename, sha256, size) per attachment so the
@@ -605,6 +774,14 @@ def verify_stored_attachments(service, message_id: str):
 
     walk(msg['payload'])
     problems = []
+    # API sha256 is blind to line-ending damage: Gmail re-decodes server-side.
+    # Bare LFs in the stored message are what makes Apple Mail truncate it.
+    bare = raw_bare_lf_count(service, message_id)
+    if bare:
+        problems.append(f"stored message has {bare} bare LF line endings (Apple Mail will "
+                        f"truncate the attachments); it was not serialized with encode_raw()")
+    else:
+        print("Verified in Gmail: stored MIME is pure CRLF (0 bare LF), safe for IMAP clients")
     for fn, (digest, size) in expected.items():
         data = found.get(fn)
         if data is None:
@@ -633,11 +810,12 @@ def verify_stored_attachments(service, message_id: str):
 
 def create_draft(to: str, subject: str, body: str, cc: str = None, bcc: str = None,
                  reply_to_id: str = None, new_thread: bool = False, attachments: list = None,
-                 force_thread: bool = False):
+                 force_thread: bool = False, inline_attachments: bool = False):
     """Create a draft email."""
     service = get_gmail_service()
     raw, thread_id, to, subject, reply_to_id = create_message(
-        to, subject, body, cc, bcc, reply_to_id, new_thread, attachments, force_thread
+        to, subject, body, cc, bcc, reply_to_id, new_thread, attachments, force_thread,
+        inline_attachments
     )
 
     draft_body = {'message': {'raw': raw}}
@@ -657,11 +835,12 @@ def create_draft(to: str, subject: str, body: str, cc: str = None, bcc: str = No
 
 def send_email(to: str, subject: str, body: str, cc: str = None, bcc: str = None,
                reply_to_id: str = None, new_thread: bool = False, attachments: list = None,
-               force_thread: bool = False):
+               force_thread: bool = False, inline_attachments: bool = False):
     """Send an email directly (not as draft)."""
     service = get_gmail_service()
     raw, thread_id, to, subject, reply_to_id = create_message(
-        to, subject, body, cc, bcc, reply_to_id, new_thread, attachments, force_thread
+        to, subject, body, cc, bcc, reply_to_id, new_thread, attachments, force_thread,
+        inline_attachments
     )
 
     message_body = {'raw': raw}
@@ -938,17 +1117,136 @@ def read_draft(draft_id: str):
     return d
 
 
-def update_draft(draft_id: str, body: str, to: str = None, subject: str = None,
-                 cc: str = None, bcc: str = None, attachments: list = None):
+# ---------------------------------------------------------------- draft safety
+#
+# 22 Sep 2026: two draft updates in one morning rebuilt a draft from a locally
+# cached body and wiped edits Stephen had made in the Gmail web UI between
+# turns (the Sandra Badu-Poku costing draft; a near miss on a Keshthra draft).
+# Gmail keeps no version history for drafts, so those edits were gone.
+#
+# Two defences below: a stamp of the body this tool last wrote, so a plain
+# --body update refuses when the live body has moved on, and --replace, which
+# edits the LIVE body server-side instead of resending a remembered one.
+
+STAMPS_PATH = os.path.expanduser('~/.claude/skills/email/.draft-body-stamps.json')
+
+
+def _body_sha(html: str, text: str) -> str:
+    """Fingerprint of a draft body. HTML wins when present, as that is what
+    Gmail stores for anything this tool composes."""
+    import hashlib
+    raw = (html or text or '')
+    # Gmail rewrites whitespace between saves, so compare on content.
+    raw = re.sub(r'\s+', ' ', raw).strip()
+    return hashlib.sha256(raw.encode('utf-8')).hexdigest()[:16]
+
+
+def _stamps() -> dict:
+    try:
+        return json.load(open(STAMPS_PATH))
+    except Exception:
+        return {}
+
+
+def _stamp_key(draft_id: str) -> str:
+    return f"{CURRENT_ACCOUNT}:{draft_id}"
+
+
+def _save_stamp(draft_id: str, sha: str):
+    st = _stamps()
+    st[_stamp_key(draft_id)] = {'sha': sha, 'at': datetime.now().isoformat(timespec='seconds')}
+    try:
+        with open(STAMPS_PATH, 'w') as f:
+            json.dump(st, f, indent=1)
+        os.chmod(STAMPS_PATH, 0o600)
+    except Exception:
+        pass
+
+
+def _live_body(msg) -> tuple:
+    text_body, html_body = extract_body_both(msg['payload'])
+    return text_body, html_body
+
+
+def _download_attachments(service, msg, dest_dir: str) -> list:
+    """Save a draft's attachments so an update can put them back.
+
+    Gmail replaces the whole message on update, so anything not re-passed is
+    dropped. Re-downloading is the only way to preserve a file Stephen added
+    by hand, since the tool has no local copy of it.
+    """
+    saved = []
+
+    def walk(part):
+        fn = part.get('filename')
+        body = part.get('body', {}) or {}
+        if fn and (body.get('attachmentId') or body.get('data')):
+            if body.get('attachmentId'):
+                att = service.users().messages().attachments().get(
+                    userId='me', messageId=msg['id'], id=body['attachmentId']).execute()
+                data = att.get('data', '')
+                expected = att.get('size')
+            else:
+                data = body['data']
+                expected = body.get('size')
+            blob = base64.urlsafe_b64decode(data)
+            if expected and len(blob) != expected:
+                raise RuntimeError(
+                    f"attachment {fn}: got {len(blob)} bytes, Gmail reports {expected}. "
+                    f"Refusing to update and risk a truncated file.")
+            path = os.path.join(dest_dir, fn)
+            with open(path, 'wb') as f:
+                f.write(blob)
+            saved.append(path)
+        for p in part.get('parts', []) or []:
+            walk(p)
+
+    walk(msg['payload'])
+    return saved
+
+
+def _apply_replacement(body: str, old: str, new: str, replace_all: bool) -> str:
+    n = body.count(old)
+    if n == 0:
+        raise SystemExit(
+            "--replace: the OLD text does not appear in the live draft. Nothing written.\n"
+            "Read the draft first (read-draft --id ...) and copy the exact text, including\n"
+            "any HTML tags, since the stored body is HTML.")
+    if n > 1 and not replace_all:
+        raise SystemExit(
+            f"--replace: the OLD text appears {n} times in the live draft, so the edit is "
+            f"ambiguous. Nothing written.\nUse a longer, unique OLD, or pass --replace-all.")
+    return body.replace(old, new)
+
+
+def update_draft(draft_id: str, body: str = None, to: str = None, subject: str = None,
+                 cc: str = None, bcc: str = None, attachments: list = None,
+                 replace: tuple = None, replace_all: bool = False,
+                 force_body: bool = False, expect_body_sha: str = None,
+                 drop_attachments: bool = False):
     """Update an existing draft IN PLACE (same draft ID, same thread).
 
-    Recipients/subject default to the draft's current values. Reply headers
-    (In-Reply-To/References) and threadId are preserved so a reply stays a
-    reply. NOTE: Gmail replaces the whole message on update, so attachments
-    the user added by hand are dropped unless re-passed via --attach; this
-    function warns when that would happen.
+    Two ways to change the text:
+
+      --replace OLD NEW   edits the LIVE body: the current server-side text is
+                          fetched, the replacement applied to THAT, and the
+                          result written back. Stephen's edits survive because
+                          they were never overwritten. Preferred.
+      --body TEXT         replaces the whole body. Guarded: it refuses unless
+                          the live body still matches what this tool last
+                          wrote, because anything else means he has edited the
+                          draft since and the new text would erase that.
+
+    Attachments are preserved by re-downloading and re-attaching them, since
+    Gmail replaces the whole message on update. Recipients, subject, reply
+    headers and threadId all default to the draft's current values.
     """
     import email as email_lib
+    import tempfile
+
+    if (body is None) == (replace is None):
+        print("Error: give exactly one of --body or --replace OLD NEW.", file=sys.stderr)
+        sys.exit(1)
 
     service = get_gmail_service()
     did, d = _resolve_draft(service, draft_id)
@@ -957,11 +1255,50 @@ def update_draft(draft_id: str, body: str, to: str = None, subject: str = None,
         sys.exit(1)
     msg = d['message']
     headers = {h['name']: h['value'] for h in msg['payload']['headers']}
+    live_text, live_html = _live_body(msg)
+    live_sha = _body_sha(live_html, live_text)
+    stamp = _stamps().get(_stamp_key(did), {}).get('sha')
+
+    if expect_body_sha and expect_body_sha != live_sha:
+        print(f"REFUSED: the draft's live body is {live_sha}, not the {expect_body_sha} you "
+              f"expected.\nIt has changed since you read it. Re-read it (read-draft --id "
+              f"{did}) and redo the edit on the current text.", file=sys.stderr)
+        sys.exit(2)
+
+    if replace is not None:
+        old, new = replace
+        target = live_html or live_text
+        body = _apply_replacement(target, old, new, replace_all)
+    elif not (force_body or expect_body_sha):
+        # A whole-body replacement is only safe when the live body is still the
+        # one this tool wrote. Stephen edits drafts in Gmail between turns.
+        if stamp is None:
+            print(f"REFUSED: no record of this tool writing the current body of draft {did}, "
+                  f"so a whole-body update could erase edits made in Gmail.\n"
+                  f"Do one of:\n"
+                  f"  1. read-draft --id {did}, then update-draft --replace 'OLD' 'NEW' "
+                  f"(edits the live text, keeps his changes)\n"
+                  f"  2. read-draft --id {did}, confirm the body is yours, then re-run with "
+                  f"--expect-body-sha {live_sha}\n"
+                  f"  3. --force-body, which overwrites whatever is there now. Drafts have no "
+                  f"version history, so this cannot be undone.", file=sys.stderr)
+            sys.exit(2)
+        if stamp != live_sha:
+            print(f"REFUSED: draft {did} has been edited since this tool last wrote it "
+                  f"(live {live_sha}, last written {stamp}).\nThose are almost certainly "
+                  f"Stephen's own edits, and --body would erase them.\n"
+                  f"Use update-draft --replace 'OLD' 'NEW' to change the live text, or "
+                  f"--force-body to overwrite it deliberately.", file=sys.stderr)
+            sys.exit(2)
 
     existing_attachments = _list_attachment_names(msg['payload'])
-    if existing_attachments and not attachments:
-        print(f"WARNING: draft currently has attachments ({', '.join(existing_attachments)}) "
-              f"which will be DROPPED by this update. Re-run with --attach to keep them.",
+    tmpdir = None
+    if existing_attachments and not attachments and not drop_attachments:
+        tmpdir = tempfile.mkdtemp(prefix='draft-attach-')
+        attachments = _download_attachments(service, msg, tmpdir)
+        print(f"Preserving {len(attachments)} attachment(s): {', '.join(existing_attachments)}")
+    elif existing_attachments and drop_attachments:
+        print(f"WARNING: dropping attachments as asked ({', '.join(existing_attachments)}).",
               file=sys.stderr)
 
     to = to or headers.get('To')
@@ -980,7 +1317,9 @@ def update_draft(draft_id: str, body: str, to: str = None, subject: str = None,
     for hdr in ('In-Reply-To', 'References'):
         if headers.get(hdr) and not mime.get(hdr):
             mime[hdr] = headers[hdr]
-    raw = base64.urlsafe_b64encode(mime.as_bytes()).decode()
+    # Must go through encode_raw (CRLF). A plain mime.as_bytes() here re-emits
+    # bare LF and was the second route by which update-draft corrupted PDFs.
+    raw = encode_raw(mime)
 
     body_obj = {'message': {'raw': raw}}
     if msg.get('threadId'):
@@ -988,11 +1327,106 @@ def update_draft(draft_id: str, body: str, to: str = None, subject: str = None,
 
     updated = service.users().drafts().update(userId='me', id=did, body=body_obj).execute()
     verify_stored_attachments(service, updated['message']['id'])
+
+    # Stamp what is now there, read back from the server rather than assumed,
+    # so the next update can tell his edits from ours.
+    try:
+        fresh = service.users().drafts().get(userId='me', id=updated['id'], format='full').execute()
+        ftext, fhtml = _live_body(fresh['message'])
+        new_sha = _body_sha(fhtml, ftext)
+    except Exception:
+        new_sha = None
+    if new_sha:
+        _save_stamp(updated['id'], new_sha)
+
     print("Draft updated in place.")
     print(f"Draft ID: {updated['id']}")
+    print(f"Message ID: {updated['message']['id']} (it changes on every update)")
     print(f"To: {to}")
     print(f"Subject: {subject}")
+    if new_sha:
+        print(f"Body sha: {new_sha}")
     return updated
+
+
+def verify_draft(draft_id: str, sources: list = None) -> bool:
+    """Audit a draft's attachments the way a recipient/IMAP client will see them.
+
+    Checks, per attachment: size, sha256 (vs --source files when given), PDF
+    %PDF/%%EOF/pypdf parse. Per message: bare-LF count in the stored raw MIME
+    (>0 means Apple Mail will truncate on fetch), and whether Apple Mail has
+    re-saved the draft (Apple-Mail boundary / x-unix-mode), which is how a
+    client-side truncation becomes permanent server-side. Exit 1 on any problem.
+    """
+    import hashlib, io
+    service = get_gmail_service()
+    did, d = _resolve_draft(service, draft_id)
+    if not d:
+        print(f"No draft found with ID or message ID: {draft_id}", file=sys.stderr)
+        return False
+    msg = d['message']
+    mid = msg['id']
+    problems = []
+    raw = base64.urlsafe_b64decode(service.users().messages().get(
+        userId='me', id=mid, format='raw').execute()['raw'])
+    bare = raw.count(b'\n') - raw.count(b'\r\n')
+    print(f"Draft {did} (message {mid}, thread {msg.get('threadId')}): {len(raw)} raw bytes, {bare} bare LF")
+    if bare:
+        problems.append(f"{bare} bare LF in stored MIME (IMAP clients will truncate attachments)")
+    if b'Apple-Mail=_' in raw or b'x-unix-mode' in raw:
+        print("NOTE: last saved by Apple Mail (Apple-Mail boundary / x-unix-mode). Any attachment "
+              "it re-uploaded is the copy Mail had cached, so check it against the source.")
+    src = {}
+    for sp in sources or []:
+        sp = os.path.expanduser(sp)
+        b = open(sp, 'rb').read()
+        src[os.path.basename(sp)] = (hashlib.sha256(b).hexdigest(), len(b))
+
+    found = []
+
+    def walk(part, depth=0):
+        hs = {h['name'].lower(): h['value'] for h in part.get('headers', [])}
+        print(f"{'  ' * depth}- {part.get('mimeType')} {part.get('filename') or ''} "
+              f"size={part['body'].get('size')} disp={hs.get('content-disposition', '')[:40]}")
+        if part.get('filename') and part['body'].get('attachmentId'):
+            att = service.users().messages().attachments().get(
+                userId='me', messageId=mid, id=part['body']['attachmentId']).execute()
+            found.append((part['filename'], base64.urlsafe_b64decode(att['data'])))
+        for c in part.get('parts', []):
+            walk(c, depth + 1)
+
+    walk(msg['payload'])
+    if not found:
+        print("No attachments on this draft.")
+    for fn, data in found:
+        sha = hashlib.sha256(data).hexdigest()
+        line = f"  {fn}: {len(data)} bytes sha256 {sha[:16]}"
+        if fn in src:
+            ok = src[fn][0] == sha
+            line += f" | source {src[fn][1]} bytes: {'MATCH' if ok else 'MISMATCH'}"
+            if not ok:
+                problems.append(f"{fn}: stored {len(data)} bytes != source {src[fn][1]} bytes")
+        if fn.lower().endswith('.pdf') or data[:5] == b'%PDF-':
+            if data[:5] != b'%PDF-' or b'%%EOF' not in data[-2048:]:
+                problems.append(f"{fn}: PDF truncated (no %PDF header or no %%EOF at end)")
+                line += " | PDF TRUNCATED"
+            else:
+                try:
+                    from pypdf import PdfReader
+                    line += f" | PDF parses ({len(PdfReader(io.BytesIO(data)).pages)} pages)"
+                except ImportError:
+                    pass
+                except Exception as e:
+                    problems.append(f"{fn}: PDF fails to parse ({e})")
+        print(line)
+    for name in src:
+        if name not in [f for f, _ in found]:
+            problems.append(f"{name}: expected attachment is missing from the draft")
+    if problems:
+        print("VERIFY FAILED:\n  " + "\n  ".join(problems))
+        return False
+    print("VERIFY OK")
+    return True
 
 
 def thread_state(addr: str, days: int = 90, max_msgs: int = 12, no_cache: bool = False):
@@ -1159,6 +1593,9 @@ def main():
                               help='Reply in the exact --reply-to thread even if newer traffic with the contact exists (disables stale-reply auto-redirect)')
     draft_parser.add_argument('--attach', action='append', dest='attachments', metavar='FILE',
                              help='Attach a file (can be used multiple times)')
+    draft_parser.add_argument('--attach-inline', dest='inline_attachments', action='store_true',
+                             help='Place each attached file in the body immediately after the '
+                                  'line that names it, instead of all of them at the end')
 
     # Send command
     send_parser = subparsers.add_parser('send', help='Send an email directly')
@@ -1173,6 +1610,9 @@ def main():
                              help='Reply in the exact --reply-to thread even if newer traffic with the contact exists (disables stale-reply auto-redirect)')
     send_parser.add_argument('--attach', action='append', dest='attachments', metavar='FILE',
                              help='Attach a file (can be used multiple times)')
+    send_parser.add_argument('--attach-inline', dest='inline_attachments', action='store_true',
+                             help='Place each attached file in the body immediately after the '
+                                  'line that names it, instead of all of them at the end')
 
     # Search command
     search_parser = subparsers.add_parser('search', help='Search emails')
@@ -1213,6 +1653,10 @@ def main():
     update_parser.add_argument('--attach', action='append', dest='attachments', metavar='FILE',
                                help='Attach a file (must re-pass existing attachments or they are dropped)')
 
+    verify_parser = subparsers.add_parser('verify-draft', help='Audit a draft attachment the way IMAP clients see it (sha, PDF parse, bare LF, Apple Mail rewrite)')
+    verify_parser.add_argument('--id', required=True, help='Draft ID or message ID')
+    verify_parser.add_argument('--source', action='append', metavar='FILE', help='Local source file to hash-compare (repeatable)')
+
     args = parser.parse_args()
 
     # Set the account before any API calls
@@ -1228,13 +1672,13 @@ def main():
             if not args.to and not args.reply_to:
                 print("Error: --to is required unless using --reply-to", file=sys.stderr)
                 sys.exit(1)
-            create_draft(args.to, args.subject or '', args.body, args.cc, args.bcc, args.reply_to, args.new, args.attachments, getattr(args, 'keep_thread', False))
+            create_draft(args.to, args.subject or '', args.body, args.cc, args.bcc, args.reply_to, args.new, args.attachments, getattr(args, 'keep_thread', False), getattr(args, 'inline_attachments', False))
         elif args.command == 'send':
             # Validate: need either --to or --reply-to
             if not args.to and not args.reply_to:
                 print("Error: --to is required unless using --reply-to", file=sys.stderr)
                 sys.exit(1)
-            send_email(args.to, args.subject or '', args.body, args.cc, args.bcc, args.reply_to, args.new, args.attachments, getattr(args, 'keep_thread', False))
+            send_email(args.to, args.subject or '', args.body, args.cc, args.bcc, args.reply_to, args.new, args.attachments, getattr(args, 'keep_thread', False), getattr(args, 'inline_attachments', False))
         elif args.command == 'search':
             if not args.query and not args.with_person:
                 print("Error: Either --query or --with is required", file=sys.stderr)
@@ -1250,6 +1694,9 @@ def main():
             read_draft(args.id)
         elif args.command == 'update-draft':
             update_draft(args.id, args.body, args.to, args.subject, args.cc, args.bcc, args.attachments)
+        elif args.command == 'verify-draft':
+            if not verify_draft(args.id, args.source):
+                sys.exit(1)
     except Exception as e:
         print(f"Error: {e}", file=sys.stderr)
         sys.exit(1)

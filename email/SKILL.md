@@ -155,6 +155,21 @@ Required workflow when revising an existing draft:
 
 Failure mode to avoid: the user manually edits a draft in Gmail (often investing significant thought), then asks for one small change, and you regenerate from your own previous text, wiping their work. This has happened repeatedly. Treat draft inspection-and-diff as a hard precondition for any revision, the same as HTML formatting and humanizer.
 
+## CRITICAL: Attachment-safe draft writes (never hand-roll MIME serialization)
+
+This is the root cause of the recurring "the attachment broke" reports. It was proved on 28 Sep 2026 with the Chandan/NYP draft, after several sessions had failed to fix it.
+
+**Mechanism.** Code that uploads `base64.urlsafe_b64encode(msg.as_bytes())` (or `as_string()`) stores the message in Gmail with bare LF line endings. The Gmail API hands the attachment back byte-identical, so every API-side check passes, including the `Verified in Gmail: sha256 match` line. Gmail's IMAP side is different. It advertises each part's size from the stored LF bytes but serves CRLF text, and Apple Mail reads only the advertised number of octets. The attachment loses its last ~size/78 bytes: for a PDF that is the xref tail, the trailer and `%%EOF`, so Preview and Quick Look cannot open it. Whether a given Mail fetch hits this depends on the mailbox and fetch path (in the test the Drafts copy came through intact and the All Mail copy was truncated), which is why it looked intermittent. If Stephen then touches the draft in Mail.app, Mail re-saves it with the truncated copy (Apple-Mail boundary, `x-unix-mode`, inline disposition). From then on the damage is in Gmail itself and every client gets the broken file, web included.
+
+**Evidence (28 Sep 2026).** On 25 Sep the Chandan draft was updated in place twice by ad-hoc code using plain `msg.as_bytes()`. Mail's 18:19 download of the PDF was 151,341 of 153,305 bytes, an exact prefix of the original. A test draft built the same way reproduced the identical corrupt file (same sha256) in Mail's cache. The same PDF sent through `gmail_utils.py --attach` arrived intact in every cached copy. `update-draft` had the same bug, since it re-serialized with plain `as_bytes()`; that is now fixed.
+
+**Rules.**
+
+1. Never create, update or send with your own MIME code. Use `gmail_utils.py draft`, `send` or `update-draft`. If a one-off really needs custom MIME (for example a surgical repair of a draft Stephen has edited), serialize only with `gmail_utils.encode_raw(msg)`, which forces CRLF and refuses to return a bare LF.
+2. After every write that carries an attachment, run `verify-draft` against the source file (command below). It compares sha256 with the source, checks the PDF for `%%EOF` and parses it, counts bare LFs in the stored MIME (must be 0) and flags an Apple Mail re-save. Exit 0 means safe. An API sha256 match on its own proves nothing about what Mail will show.
+3. To repair a draft that Mail has re-saved with a truncated file, fetch its raw MIME and replace only the PDF part's base64 payload with the correct bytes. Keep the part's headers and Content-ID, because Mail's HTML points at it through `<object data="cid:...">`. Re-serialize with `encode_raw`, call `drafts().update` with the same threadId, then run `verify-draft`. His body survives byte for byte.
+4. Keep attachment sources somewhere durable. macOS purges `/private/tmp` (session scratchpads included) after about three days; the NYP PDF had to be rebuilt from HTML recovered out of a session transcript.
+
 ## CRITICAL: Email Body Formatting
 
 **NEVER use Markdown in email bodies. Gmail does not render Markdown, use HTML tags instead.**
@@ -345,6 +360,49 @@ python3 ~/.claude/skills/email/scripts/gmail_utils.py draft --to "recipient@exam
 # Email with multiple attachments
 python3 ~/.claude/skills/email/scripts/gmail_utils.py draft --to "recipient@example.com" --subject "Subject" --body "<p>Files attached</p>" --attach "/path/to/file1.pdf" --attach "/path/to/file2.docx"
 
+# Each attachment placed in the body under the line naming it (--attach-inline).
+# INTERNAL ONLY: breaks in Outlook and looks broken in Apple Mail. See the warning below.
+python3 ~/.claude/skills/email/scripts/gmail_utils.py draft --to "recipient@example.com" --subject "Work packages" --body "<ol><li>file1.docx</li><li>file2.pdf</li></ol>" --attach "/path/to/file1.docx" --attach "/path/to/file2.pdf" --attach-inline
+
+### `--attach-inline`: INTERNAL DRAFTS ONLY
+
+**Do not use this for external recipients, and never for anyone on Outlook.**
+Interleaved multipart/mixed is legal MIME and the files arrive intact, but mail
+clients disagree about how to lay it out:
+
+- **Outlook renders only the FIRST body section.** Everything after the first
+  attachment becomes `ATT00001.htm`, `ATT00002.htm` and so on, so the recipient
+  reads a truncated email with junk files and nothing warns either of you.
+- **Apple Mail's compose window shows blank gaps** under each list item, with a
+  blue placeholder, even when every attachment is byte-identical in Gmail.
+
+For anything leaving the organisation use plain `--attach` with a numbered list
+of the filenames in the body, which every client renders the same way.
+
+The script prints this warning when the recipient's domain is not one of the
+work domains in `config.json`. It still builds the draft; the judgement is yours.
+
+### How it works
+
+Default behaviour puts every attachment after the whole body, so a pack of six
+documents arrives as six icons the reader has to match back to the list by hand.
+`--attach-inline` interleaves them: body up to and including the line naming
+file 1, file 1, the next lines, file 2, and so on. Ordering is by the filename
+as written in the body, so write the basename exactly (`20260930-...-v1.2.docx`).
+A file the body never names is still attached, at the end, with a note saying so.
+Works on `draft` and `send`; `--attach` on its own is unchanged.
+
+The MIME is multipart/mixed with the parts in that order, confirmed as stored by
+Gmail. Apple Mail and Outlook lay parts out in order. **Gmail's own web UI may
+still show its attachment chips in a row under the message**, since it decides
+its own layout; that has not been checked visually. Deliberately not
+Content-ID/cid, which is for images referenced by an `<img>` tag and which some
+clients hide entirely for documents.
+
+The integrity guards apply in both modes: size-stability, the structural
+PDF/docx check before attaching, and the sha256 round-trip against what Gmail
+stored. They are now in one shared builder rather than duplicated per mode.
+
 # Start new thread (skip auto-reply to existing)
 python3 ~/.claude/skills/email/scripts/gmail_utils.py draft --to "recipient@example.com" --subject "New Topic" --body "<p>Starting fresh</p>" --new
 ```
@@ -362,6 +420,14 @@ python3 ~/.claude/skills/email/scripts/gmail_utils.py draft --to "recipient@exam
 | `--keep-thread` | Disable the stale-reply auto-redirect: reply in the exact `--reply-to` thread even if newer traffic with the contact exists. Use only when deliberately reviving a specific older thread. |
 
 **Note:** `--account` is a global option that must come before the command (see Usage above).
+
+### verify-draft - Prove a draft's attachments will open
+
+```bash
+python3 ~/.claude/skills/email/scripts/gmail_utils.py --account work verify-draft --id DRAFT_ID --source /path/to/file.pdf
+```
+
+Prints the MIME tree and, for each attachment, its size, sha256 (MATCH/MISMATCH against each `--source`) and PDF parse result. Also reports the bare-LF count of the stored message and whether Apple Mail last saved the draft. Exits 1 on any problem. Run it after every draft write that carries an attachment (see "Attachment-safe draft writes" above).
 
 ### search - Search emails
 
