@@ -87,3 +87,14 @@ email/scripts/outbox_audit.py
 
 # Live test cases naming real addresses and message ids
 *live-cases.local.json
+
+# todo-agent: the user's own To Do note bodies, delivery state and logs
+todo-agent/backups/
+todo-agent/state/
+todo-agent/logs/
+
+# cmux: live session registry (workspace titles, contacts) and task briefs
+cmux/references/registry.md
+cmux/references/registry.md.bak-*
+cmux/references/registry-durable.md
+cmux/state/

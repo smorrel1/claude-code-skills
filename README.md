@@ -22,6 +22,8 @@ Skills are reusable modules that extend Claude Code's capabilities. Each skill p
 | [monthly-report](#monthly-report) | Monthly board report generation | Custom paths + OAuth |
 | [ce-to-510k](#ce-to-510k) | Port CE Mark / UKCA technical files to FDA 510(k) for AI/ML SaMD | None |
 | [docx-delta](#docx-delta) | Compare two Word documents, redline with tracked changes | python-docx |
+| [cmux](#cmux) | Manage many parallel Claude Code sessions in cmux workspaces | cmux |
+| [todo-agent](#todo-agent) | Two-way channel between an Apple Notes To Do list and your agents | macOS + cmux |
 
 ---
 
@@ -242,7 +244,7 @@ Port CE Mark / UKCA medical device technical documentation into an FDA 510(k) su
 4. Mapped 510(k) eCopy package structure (sections 00 to 21) with content gap list
 5. Strategic recommendation on whether to pursue a Pre-Sub
 
-**Highest-value content:** `references/06-fda-ai-ml-deficiencies.md` — a categorised catalogue of the AI/ML deficiency question patterns FDA uses during AINN and Interactive Feedback rounds, with a 16-item pre-empt checklist you can paste into your draft.
+**Highest-value content:** `references/06-fda-ai-ml-deficiencies.md`, a categorised catalogue of the AI/ML deficiency question patterns FDA uses during AINN and Interactive Feedback rounds, with a 16-item pre-empt checklist you can paste into your draft.
 
 **Usage:** invoke via the Skill tool or by mentioning any of: 510(k), FDA submission, Q-Sub, pre-sub, predicate device, substantial equivalence, CE to FDA, MDR to FDA, AI/ML 510k. Give Claude the path to your CE Mark / UKCA technical file root and your device details; the skill works through eight phases and produces deliverables on disk.
 
@@ -328,3 +330,48 @@ comments, headers and footers are counted and named in the output, not compared.
 Images and styling are not compared.
 
 **Requires:** `python-docx` (`pip install python-docx`). No Word, no LibreOffice.
+
+---
+
+## cmux
+
+Manage dozens of parallel Claude Code sessions running in [cmux](https://github.com/manaflow-ai/cmux)
+workspaces: find which session owns a topic, hand work to another session and prove it started,
+restart every session by its own id after an update, and roll up what each one is doing.
+
+```bash
+python3 ~/.claude/skills/cmux/scripts/send_task.py --workspace "grant applications" "task text"
+python3 ~/.claude/skills/cmux/scripts/restart_sessions.py           # verify, by session id
+python3 ~/.claude/skills/cmux/scripts/refresh_registry.py           # regenerate the registry
+```
+
+`send_task.py` exists because `cmux send` fills the input box without submitting it: a
+multi-line paste arrives with a "paste again to expand" hint, so the first Enter only expands
+it and the task stays there looking delivered. It sends one short line pointing at a spooled
+brief, presses Enter until the target is running, and exits non-zero if it never started.
+Workspaces are addressed by NAME; numbers drift on every reorder and have misrouted briefs.
+
+Copy `references/registry-durable.example.md` to `registry-durable.md` and fill in your own
+workspaces. The generated `registry.md` and the task spool are gitignored.
+
+---
+
+## todo-agent
+
+Turns an Apple Notes To Do list into a two-way channel with your agents. Any bullet that opens
+with `claude` (the `@` is optional) is picked up within five minutes, handed to a chief-of-staff
+session, and ticked with the outcome. Agents write follow-ups back near the TOP of the note,
+because a long list is only read down to the first page.
+
+```bash
+python3 ~/.claude/skills/todo-agent/scripts/todo_agent.py scan --dry-run
+python3 ~/.claude/skills/todo-agent/scripts/todo_agent.py prepend --heading "Call follow-ups" --items items.json
+python3 ~/.claude/skills/todo-agent/tests/test_trigger.py
+```
+
+Most of the code exists to handle undocumented Apple Notes behaviour: every whole-body write
+multiplies font sizes by 1.2 and it compounds, a note's name comes from its first line so copies
+shadow the original, and Notes fragments your markup so markers must be matched against stripped
+text. Writes go to a note pinned by Core Data id and are backed up first.
+
+Requires macOS (Apple Notes) and cmux. Note bodies, delivery state and logs are gitignored.
