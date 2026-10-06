@@ -168,6 +168,34 @@ def get_event(event_id, calendar_id='primary'):
     return event
 
 
+def local_timezone():
+    """The machine's own IANA zone, e.g. Europe/London.
+
+    This used to be hardcoded to America/Los_Angeles, which silently created
+    every event eight hours out for a user in London (found 6 Oct 2026, when a
+    midday appointment would have landed at 20:00).
+    """
+    import os as _os
+    try:
+        link = _os.readlink('/etc/localtime')          # .../zoneinfo/Europe/London
+        if 'zoneinfo/' in link:
+            return link.split('zoneinfo/', 1)[1]
+    except OSError:
+        pass
+    return 'UTC'
+
+
+def local_offset(when: str) -> str:
+    """The UTC offset this machine had at that local time, as +HH:MM."""
+    try:
+        dt = datetime.fromisoformat(when)
+    except ValueError:
+        dt = datetime.now()
+    off = dt.astimezone().utcoffset() or timedelta(0)
+    mins = int(off.total_seconds() // 60)
+    return "%s%02d:%02d" % ('-' if mins < 0 else '+', abs(mins) // 60, abs(mins) % 60)
+
+
 def create_event(summary, start, end=None, duration_mins=60, location=None,
                  description=None, attendees=None, calendar_id='primary'):
     """
@@ -190,23 +218,27 @@ def create_event(summary, start, end=None, duration_mins=60, location=None,
         start = start.replace(' ', 'T')
 
     if 'T' in start:
-        # DateTime event
-        if not start.endswith('Z') and '+' not in start and '-' not in start[-6:]:
-            start += '-08:00'  # Default to PST
+        # DateTime event. Google wants RFC3339, which requires SECONDS: without
+        # them the API returns a bare 400 Bad Request with no explanation.
+        def rfc3339(value):
+            if value.endswith('Z') or '+' in value[-6:] or '-' in value[-6:]:
+                return value
+            if value.count(':') == 1:
+                value += ':00'
+            return value + local_offset(value)
 
+        start = rfc3339(start)
         if end:
             if ' ' in end and 'T' not in end:
                 end = end.replace(' ', 'T')
-            if not end.endswith('Z') and '+' not in end and '-' not in end[-6:]:
-                end += '-08:00'
+            end = rfc3339(end)
         else:
-            # Calculate end from duration
             start_dt = datetime.fromisoformat(start.replace('Z', '+00:00'))
-            end_dt = start_dt + timedelta(minutes=duration_mins)
-            end = end_dt.isoformat()
+            end = (start_dt + timedelta(minutes=duration_mins)).isoformat()
 
-        start_body = {'dateTime': start, 'timeZone': 'America/Los_Angeles'}
-        end_body = {'dateTime': end, 'timeZone': 'America/Los_Angeles'}
+        zone = local_timezone()
+        start_body = {'dateTime': start, 'timeZone': zone}
+        end_body = {'dateTime': end, 'timeZone': zone}
     else:
         # All-day event
         start_body = {'date': start}
