@@ -163,6 +163,45 @@ from this point. Re-resolve by name before the next send.
 When delegating to several workspaces in one batch, pin+reorder each, foreground
 the highest-priority one last, and report all by workspace title.
 
+## A relaunch can leave a DUPLICATE window
+
+Sometimes cmux restores the saved window AND rebuilds another for the resumed
+sessions. The rebuilt one holds the live sessions; the restored one holds bare shells
+printing "This agent session is already running in process N", and every session is
+bound to two panels. On 6 Oct 2026 that was 74 duplicate workspaces and 142 double
+bindings, which `restart_sessions.py` reports as DOUBLE BOUND.
+
+```bash
+python3 ~/.claude/skills/cmux/scripts/prune_twin_window.py --window window:2
+python3 ~/.claude/skills/cmux/scripts/prune_twin_window.py --window window:2 --apply
+```
+
+It closes a workspace only when its screen, read at that moment, shows no running
+Claude AND positively reads as a shell prompt AND no live claude process is bound to
+its panel AND every session it carries is also bound in the window being kept. It
+refuses the window that holds the live sessions outright.
+
+Things that cost time on 6 Oct, now handled:
+
+- **An unreadable surface reads as empty**, which looks exactly like a bare shell.
+  Hence the positive shell test. To read one, `select-workspace` to materialise it,
+  wait about 3 seconds, then read again.
+- **The tree's tty for a twin is the SAME tty as the live original**, so checking
+  `ps` by tty says every twin has a live claude. It does not. The screen is the
+  ground truth; the tty is not.
+- **Browser panes are content, not duplication.** Four workspaces held pages opened
+  by hand (claude.ai settings, the website, an artifact, a PDF). The script closes
+  only the duplicate terminal pane inside such a workspace and leaves the rest.
+- **cmux refuses to close the last surface** in a workspace and spawns a fresh shell
+  instead, which looks like a failure.
+- **Pinned workspaces refuse to close.** Unpin first; the script does.
+
+Move anything left into the keeping window (`move-workspace-to-window`), then
+`cmux close-window --window window:2`. Afterwards `restart_sessions.py` should report
+0 DOUBLE BOUND, which is also what stops the next relaunch from repeating it: the
+duplication is restored FROM the saved state, so a state file carrying each session
+once cannot produce it.
+
 ## Workspace ORDER does not survive a relaunch
 
 cmux does not restore the order of workspaces. Measured 6 Oct 2026: the saved state
