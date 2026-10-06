@@ -45,7 +45,10 @@ python3 ~/.claude/skills/cmux/scripts/idle_rank.py --all --top 12    # busy ones
 
 It prints hours idle, a verified busy flag, the workspace name, its live
 `workspace:` and `surface:` refs, the bound session id and the panel's cwd,
-idlest first.
+idlest first. Rows showing `?` have no Claude bound to the panel (a bare shell,
+a fresh second pane) and are never candidates; they sort last and are counted in
+a line under the table, so a handful of them cannot be mistaken for a total
+failure.
 
 - **Idleness** is the timestamp on the last entry INSIDE each panel's transcript,
   not the file's mtime. A bulk `restore_bindings.py` pass rewrites every
@@ -95,6 +98,13 @@ reorder and have misrouted briefs twice: on 29 Sep a grants brief into a finance
 30 Sep an email-tooling report into "health personal". A name matching nothing, or several
 workspaces, stops and lists the candidates instead of guessing.
 
+`--workspace` takes a NAME, never a number, and refuses a numeric ref outright.
+An unattended caller (the todo-agent job, any cron) must preflight with
+`--dry-run`, which resolves the name and the bound session and types nothing:
+without that, a change to this contract shows up as weeks of silent retries
+rather than one loud failure. That is exactly what happened from 09:18 on
+1 Oct 2026, when the todo-agent was still passing the number it had looked up.
+
 Do not hand-roll `cmux send` + `send-key Enter`: that is what failed twice on
 21 Sep 2026, leaving tasks sitting unsubmitted in the target's input box while the
 sender reported success.
@@ -121,9 +131,13 @@ delivered. So confirmation reads the TARGET'S OWN transcript:
   brief that landed in the wrong panel (a tool result quoting the marker does not
   count, or a session could confirm itself);
 - an assistant turn, tool call or text, must follow that prompt;
-- any `isApiErrorMessage` entry after it, or screen text saying usage limit, out
-  of credits, credit balance, rate limit, overloaded or /login, is a FAILED
-  delegation, not a slow one;
+- any `isApiErrorMessage` entry after it, or error wording on screen (usage limit
+  reached, out of credits, credit balance is too low, rate limit exceeded,
+  /login), is a FAILED delegation, not a slow one. This is only ever considered
+  when the session is NOT visibly running: the screen shows the target's content
+  as well as its state, and on 1 Oct 2026 a healthy session was called blocked
+  while it was reading a report that discussed being out of credits. A session
+  that is mid-task cannot be out of credits;
 - nothing at all within about 60 seconds counts as not started: check the screen
   rather than assuming.
 
@@ -148,6 +162,45 @@ from this point. Re-resolve by name before the next send.
 
 When delegating to several workspaces in one batch, pin+reorder each, foreground
 the highest-priority one last, and report all by workspace title.
+
+## Workspace ORDER does not survive a relaunch
+
+cmux does not restore the order of workspaces. Measured 6 Oct 2026: the saved state
+held one window of 78 workspaces, the relaunch produced two windows, one holding the
+old order with only bare shells in it and the other holding all 79 live sessions in a
+different order, a median of 4 places out and one workspace 50 places from where it
+had been. An order built over weeks, most-used at the top, is lost every restart.
+
+So it is snapshotted from outside, by title, every 30 seconds by the todo-agent job:
+
+```bash
+python3 ~/.claude/skills/cmux/scripts/workspace_order.py snapshot   # the job does this
+python3 ~/.claude/skills/cmux/scripts/workspace_order.py restore    # dry run
+python3 ~/.claude/skills/cmux/scripts/workspace_order.py restore --apply
+python3 ~/.claude/skills/cmux/scripts/workspace_order.py list       # what is held
+```
+
+After a relaunch, do both halves:
+
+```bash
+python3 ~/.claude/skills/cmux/scripts/restart_sessions.py --order            # check
+python3 ~/.claude/skills/cmux/scripts/restart_sessions.py --apply --order    # fix both
+```
+
+Three things worth knowing:
+
+- **It restores from the last snapshot taken BEFORE cmux started**, never the newest.
+  The job snapshots every 30 seconds, so by the time anyone notices a scrambled
+  relaunch the newest snapshot is the scramble. With no snapshot older than the
+  current cmux, it refuses rather than shuffling to a bad order.
+- **Refs are resolved at the moment of each move.** Every reorder renumbers the
+  workspaces after it, so a list of refs read up front is wrong by the second move.
+- **Duplicate titles are handled by occurrence.** Many bare shells share one title
+  ("user@host: ~/path"), and matching on title alone made them fight over one ref.
+
+It preserves the recorded order exactly and does not re-sort pinned workspaces to the
+top: cmux already shows them where the snapshot recorded them, and forcing pinned
+first moved four workspaces that were where Stephen had put them.
 
 ## Foreground a workspace
 

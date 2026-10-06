@@ -166,6 +166,26 @@ written to `state/pickups/` and the workspace is sent one short line pointing at
 up to three times, with the screen re-read between each. A delivery that cannot be seen running
 is reported, never recorded as done.
 
+## 1 Oct 2026: deliver by NAME, and preflight before reporting healthy
+
+`send_task.py` stopped accepting a workspace number on 30 Sep, after two briefs
+went to the wrong session off a stale one. This job was still passing the number
+it had looked up, so from 09:18 on 1 Oct every pickup was refused with "Address
+the workspace by NAME", counted as a transient failure and retried: two of
+Stephen's instructions reached 27 attempts while the log read as merely unlucky.
+
+Two changes. Deliveries now pass the title "Chief of staff" and let
+`send_task.py` resolve it against the live tree at the moment of sending, which
+is the one thing a cached number can never do. And `run.sh` runs
+`todo_agent.py preflight` first, a dry run that resolves the name and the bound
+session without typing anything; if it fails, the tick scans nothing, logs
+`PREFLIGHT FAILED` and raises a notification. A contract change now fails loudly
+once instead of quietly for hours.
+
+A target that takes the brief but cannot work it (usage limit, API error) comes
+back as exit 2 and is logged as `BLOCKED`, not retried, because retrying a
+session that is out of credits only hides it.
+
 ## It now says so out loud
 
 A shut channel used to show up only in the log. On 24 Sep 2026 cmux's socket mode changed and

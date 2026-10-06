@@ -100,9 +100,25 @@ def transcripts():
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--apply", action="store_true", help="restore NOT RUNNING panels")
+    ap.add_argument("--order", action="store_true",
+                    help="also put the workspace ORDER back, from the last snapshot "
+                         "taken before cmux started (workspace_order.py)")
     a = ap.parse_args()
 
     want, run, tx = wanted(), running(), transcripts()
+
+    # Manual corrections to cmux's binding records (cmux's own state file cannot
+    # be safely edited while the app runs). session_overrides: old sid -> the sid
+    # that panel ACTUALLY runs now (e.g. Chief of staff handover, Oct 2026).
+    # ignore_sessions: sids Stephen has retired; never flag or restore them.
+    ov_path = os.path.expanduser("~/.claude/skills/cmux/state/binding-overrides.json")
+    try:
+        ov = json.load(open(ov_path))
+    except (OSError, ValueError):
+        ov = {}
+    for w in want.values():
+        w["session"] = ov.get("session_overrides", {}).get(w["session"], w["session"])
+    ignored = set(ov.get("ignore_sessions", []))
     try:
         prev = wanted(PREV)
     except (OSError, ValueError):
@@ -114,6 +130,8 @@ def main():
     rows = []
     for panel, w in want.items():
         sid = w["session"]
+        if sid in ignored:
+            continue
         here = run.get(panel)
         if here == sid:
             v, note = "CORRECT", ""
@@ -134,6 +152,8 @@ def main():
     # silently loses its binding, so it never appears in `want` and the report above
     # says "all CORRECT". Compare with the pre-relaunch state to surface those.
     for panel, w in prev.items():
+        if w["session"] in ignored:
+            continue
         if panel in want and want[panel]["session"] == w["session"]:
             continue
         holders = [want[p]["title"] for p in where.get(w["session"], []) if p in want]
@@ -185,6 +205,19 @@ def main():
         print("Re-run with --apply to restore the NOT RUNNING ones by session id.")
     if restored:
         print("Restore issued for %d panel(s). Re-run without --apply in ~30s to confirm." % restored)
+
+    # Sessions are only half of a relaunch. The ORDER goes too, and a 159-
+    # workspace list in the wrong order is nearly as disruptive as a dead
+    # session: 6 Oct 2026, median 4 places out, one workspace 50 places out.
+    orderer = os.path.join(os.path.dirname(os.path.abspath(__file__)),
+                           "workspace_order.py")
+    if a.order:
+        subprocess.run(["/usr/bin/python3", orderer, "restore"]
+                       + (["--apply"] if a.apply else []))
+    elif os.path.exists(orderer):
+        print("\nWorkspace ORDER is not checked here. Add --order to compare it "
+              "with\nthe last snapshot from before cmux started, and --order --apply "
+              "to put it back.")
     return 0
 
 
