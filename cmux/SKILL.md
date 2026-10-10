@@ -148,20 +148,25 @@ auto-compacts) but warn that detail may be lost. Prefer `SendMessage` to a peer
 from `ListAgents` only when the peer's identity is certain; peer names (e.g.
 "documents-32") often do not match workspace titles.
 
-### 4. Housekeeping, all four, every time
+### 4. Promotion is automatic; do NOT foreground (Stephen, 10 Oct 2026)
 
-```bash
-$CMUX workspace-action --action pin --workspace workspace:N   # 1. pin it
-$CMUX reorder-workspace --workspace workspace:N --index 0     # 2. move to top of queue
-$CMUX select-workspace --workspace workspace:N                # 3. foreground it
-# 4. inform Stephen: workspace NAME, what was sent, and which exit code came back
-```
+`send_task.py` now pins the target and moves it to the top of the cmux list by
+itself after every successful send (it prints `PROMOTED: ...`). Do not repeat
+it by hand, and **do not `select-workspace` the target**: Stephen is usually
+working in another workspace and foregrounding pulls him out of it. This
+replaces the old "pin, reorder, foreground" housekeeping.
+
+Foreground a workspace only when Stephen asks to see it, or when it is blocked
+waiting on HIS answer and he has asked you to put it in front of him.
+
+Still do, every time: inform Stephen of the workspace NAME, what was sent, and
+which exit code came back.
 
 Reordering renumbers everything, so any `workspace:N` you were holding is stale
 from this point. Re-resolve by name before the next send.
 
-When delegating to several workspaces in one batch, pin+reorder each, foreground
-the highest-priority one last, and report all by workspace title.
+When delegating to several workspaces in one batch, send the highest-priority
+one last so it ends up on top, and report all by workspace title.
 
 ## A relaunch can leave a DUPLICATE window
 

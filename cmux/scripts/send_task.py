@@ -56,9 +56,15 @@ RUNNING = ("esc to interrupt", "⏺", "✻", "✢")
 PROJECTS = os.path.expanduser("~/.claude/projects")
 CONFIRM_SECS = 75          # point 9: about 60s, plus slack for a slow first turn
 
-# Point 8: a session that cannot work the brief. Screen text, lowercased.
-BLOCKED = ("usage limit", "out of credits", "credit balance", "rate limit",
-           "overloaded", "please run /login", "upgrade to")
+# Point 8: a session that cannot work the brief. Matched against screen text,
+# lowercased, and only when the session is NOT visibly running. Phrases are the
+# specific error wording rather than loose words, because the screen shows the
+# target's CONTENT as well as its state: on 1 Oct 2026 a healthy session was
+# called blocked while it was cat-ing a report that discussed being out of
+# credits. Prose mentions these; an error message says them this way.
+BLOCKED = ("usage limit reached", "out of credits", "credit balance is too low",
+           "rate limit exceeded", "api error: overloaded",
+           "please run /login", "/login to continue")
 
 
 def resolve_workspace(name):
@@ -198,17 +204,24 @@ def confirm(target, row, marker, deadline):
         else:
             after = []
         scr = screen(target)
-        low = scr.lower()
-        hit = next((b for b in BLOCKED if b in low), None)
-        if hit:
-            return "blocked", "screen says %r" % hit
+        working = any(m in scr for m in RUNNING)
         if seen_marker:
             # Point 7: an assistant turn AFTER the brief, not just its arrival.
             if any(e.get("type") == "assistant" for e in after):
                 return "running", ("assistant turn after the brief in %s"
                                    % os.path.basename(path))
-            if any(m in scr for m in RUNNING):
+            if working:
                 return "running", "spinner up, brief seen in its transcript"
+        if not working:
+            # Blocked is only considered once the session is demonstrably NOT
+            # working: a session that is mid-task cannot be out of credits, and
+            # whatever it has on screen is its content, not its state. Lines
+            # quoting the brief itself are skipped for the same reason.
+            low = "\n".join(l for l in scr.lower().splitlines()
+                            if not marker or marker.lower() not in l)
+            hit = next((b for b in BLOCKED if b in low), None)
+            if hit:
+                return "blocked", "screen says %r and nothing is running" % hit
         time.sleep(3)
 
     if seen_marker:
@@ -249,9 +262,15 @@ def started(target):
     return False, scr
 
 
+SLUG_MAX = 40
+
+
 def slugify(text):
+    """A short filename stem. Capped, because a long unbroken string used to
+    make a 300-character name and `open` failed with "File name too long"
+    (found by tests/test_send_task.py, 1 Oct 2026)."""
     words = re.findall(r"[a-z0-9]+", text.lower())
-    return "-".join(words[:5]) or "task"
+    return ("-".join(words[:5])[:SLUG_MAX].strip("-")) or "task"
 
 
 def spool(text, slug=None):
@@ -296,7 +315,27 @@ def send_task(target, text, slug=None):
     return False, line, marker, scr
 
 
+def promote(title):
+    """Pin the target and move it to the top of the cmux list, by TITLE.
+
+    Stephen, 10 Oct 2026: every delegation promotes its session to the top
+    automatically, but does NOT foreground it, because he is usually working
+    in another workspace. The ref is re-resolved here because the confirm
+    step can take a minute and any reorder in between renumbers everything.
+    """
+    try:
+        ref, _ = resolve_workspace(title)
+        cmux("workspace-action", "--action", "pin", "--workspace", ref)
+        cmux("reorder-workspace", "--workspace", ref, "--index", "0")
+        print("PROMOTED: %s pinned and moved to the top (not foregrounded)" % title)
+    except SystemExit as e:
+        print("PROMOTE SKIPPED for %r: %s" % (title, e))
+    except Exception as e:
+        print("PROMOTE FAILED for %r: %s" % (title, e))
+
+
 def main():
+    resolved_title = None
     ap = argparse.ArgumentParser()
     ap.add_argument("--workspace", metavar="NAME",
                     help="workspace NAME (not a number). Numbers drift on every "
@@ -307,6 +346,11 @@ def main():
     ap.add_argument("--slug", help="name the spooled brief file")
     ap.add_argument("--no-confirm", action="store_true",
                     help="skip transcript confirmation (screen proof only)")
+    ap.add_argument("--dry-run", action="store_true",
+                    help="resolve the target and exit; nothing is typed into it. "
+                         "Unattended callers use this as a preflight, so a change "
+                         "to this contract surfaces at once rather than as weeks "
+                         "of silent retries")
     ap.add_argument("text", nargs="?", help='task text, or - for stdin')
     a = ap.parse_args()
 
@@ -326,6 +370,17 @@ def main():
                       ("--window", a.window)):
         if val:
             target += [flag, val]
+
+    if a.dry_run:
+        row = session_for(a.workspace, a.surface)
+        if not row:
+            print("DRY RUN FAILED: nothing resolved for %s"
+                  % (a.workspace or a.surface))
+            return 1
+        print("DRY RUN OK: %s  %s %s  session %s  idle %sh. Nothing sent."
+              % (row["workspace"], row["workspace_ref"], row["surface_ref"],
+                 row["session"], row["idle_hours"]))
+        return 0
 
     if a.file:
         text = open(a.file).read()
@@ -349,6 +404,8 @@ def main():
               "Line: %s\nLast screen:\n%s"
               % (where, MAX_ENTERS, line[:90], scr))
         return 1
+    if resolved_title:
+        promote(resolved_title)
     if a.no_confirm:
         print("DELIVERED to %s (unconfirmed): %s" % (where, line[:90]))
         return 0
