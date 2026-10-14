@@ -20,6 +20,39 @@ Read, search, and draft emails using the Gmail API with OAuth credentials.
 
 When in doubt, assume the user wants a real Gmail draft (not just text pasted in the conversation) and produce one via this skill. Do not display email text inline as a substitute for drafting unless the user explicitly says they only want to see the text.
 
+## DEFAULT STYLE: plain English on STE100 principles (Stephen, 14 Oct 2026)
+
+Every email is written in plain English, following ASD-STE100 principles but WITHOUT
+its approved-word dictionary:
+
+1. **One idea per sentence.**
+2. **Short sentences**, about 20 words, hard ceiling 25. Split anything longer.
+3. **Active voice.** "Angel will send the quote", not "the quote will be sent".
+4. **The same word for the same thing**, every time. Pick radiologist OR reader, case
+   OR study, site OR customer, and keep it for the whole email.
+5. **Gloss a term or acronym on first use**, unless the reader uses it daily.
+6. **No noun stacks** ("breast tissue correspondence overlay generation process").
+
+**Contractions stay, and so does the warmth.** This is a clarity discipline, not a
+register change: the result still has to sound like Stephen, which is what the CEO
+voice pass protects. Strict STE100 would read like a maintenance manual to an
+investor, so the dictionary is deliberately not applied.
+
+**Never tell a recipient the result is ASD-STE100 compliant.** It follows the
+principles; it does not apply the controlled vocabulary, so the claim would be false.
+
+Check before saving a draft:
+
+```bash
+python3 ~/.claude/skills/email/scripts/check_plain_english.py body.html
+```
+
+Exit 0 is ready to draft. It fails only on sentences over 25 words, and offers the
+rest (passive voice, two words for one thing, unglossed acronyms) as judgement calls.
+
+**Order of passes:** compose, then plain English, then humanizer, then the CEO voice
+pass LAST, since that one protects the way he sounds and must not be undone.
+
 ## CRITICAL: Run /humanizer on every composed email
 
 **MANDATORY.** Before saving ANY draft, you MUST run the `/humanizer` skill on the body text. This applies to all composed emails (new, reply, forward) with no exceptions, unless the user explicitly waives it for a specific email or session.
