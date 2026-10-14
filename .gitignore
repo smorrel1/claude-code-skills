@@ -98,3 +98,6 @@ cmux/references/registry.md
 cmux/references/registry.md.bak-*
 cmux/references/registry-durable.md
 cmux/state/
+
+# Timestamped backups made before editing a live script
+*.bak-20*

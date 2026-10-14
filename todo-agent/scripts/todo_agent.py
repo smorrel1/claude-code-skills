@@ -122,6 +122,7 @@ def line_spans(body):
 
 
 COS_TITLE = "chief of staff"
+COS_NAME = "Chief of staff"      # as send_task.py --workspace wants it: a NAME
 
 NOTE_PREFIX = "To Do"
 LOOKBACK_DAYS = 60
@@ -556,30 +557,51 @@ def cmux(*args, timeout=30):
     return r
 
 
-def deliver(ws, message):
-    """Hand a message to a workspace and confirm it actually started.
+def deliver(name, message, dry_run=False):
+    """Hand a message to a workspace BY NAME and confirm it actually started.
 
-    The message goes as ONE short line pointing at a file, because a multi-line
-    paste arrives with a "paste again to expand" hint and the first Enter only
-    expands it, leaving the task in the input box looking delivered. Shared with
-    every other delegation through the cmux skill's send_task.py, so there is
-    one implementation of "did it actually start" rather than three.
+    Pass the title, never a number. send_task.py refuses a numeric ref outright
+    since 30 Sep 2026, after two briefs went to the wrong session off a stale
+    one, and this job kept passing the number it had looked up: from 09:18 on
+    1 Oct 2026 every pickup was refused with "Address the workspace by NAME",
+    counted as a transient failure and retried, so two of Stephen's
+    instructions sat at 27 attempts while the log looked merely unlucky.
+    send_task.py resolves the name against the live tree at the moment of
+    sending, which is the thing the number could never do.
+
+    Returns (ok, blocked). blocked=True means the target took the brief but
+    cannot work it (usage limit, API error): retrying will not help.
     """
     brief = SKILL / "state" / "pickups"
     brief.mkdir(parents=True, exist_ok=True)
     path = brief / (datetime.now().strftime("%Y%m%d-%H%M%S") + "-pickup.md")
     path.write_text(message.rstrip() + "\n")
+    cmd = ["/usr/bin/python3", str(SEND_TASK), "--workspace", name,
+           "--file", str(path)]
+    if dry_run:
+        cmd.append("--dry-run")
     try:
-        r = subprocess.run(["/usr/bin/python3", str(SEND_TASK), "--workspace", ws,
-                            "--file", str(path)], capture_output=True, text=True,
-                           timeout=120)
+        r = subprocess.run(cmd, capture_output=True, text=True, timeout=180)
     except (OSError, subprocess.TimeoutExpired):
-        return False
+        return False, False
     if r.returncode != 0:
         # Print what the target's screen actually showed. A delivery that failed
         # silently is the 9 Sep 2026 failure all over again.
         print((r.stdout or r.stderr or "").strip()[:400])
-    return r.returncode == 0
+    return r.returncode == 0, r.returncode == 2
+
+
+def preflight(name):
+    """Can a delivery to `name` even be addressed right now? (point 4)
+
+    A dry run resolves the name against the live tree and finds the bound
+    session without typing anything into it. Run before the job reports healthy,
+    so a change to send_task.py's contract shows up as one loud line instead of
+    weeks of "retrying".
+    """
+    ok, _ = deliver(name, "preflight: resolve only, nothing is sent",
+                    dry_run=True)
+    return ok
 
 
 PROMPT = """[Automatic pickup from Stephen's Apple Notes To Do list, {stamp}]
@@ -600,6 +622,15 @@ it was picked up:
 
 Standing rule: any email is saved as a DRAFT for Stephen to review. Never dispatch
 one on the strength of this instruction alone."""
+
+
+def cmd_preflight(a):
+    """Point 4: prove a delivery to the Chief of staff can be addressed."""
+    if preflight(COS_NAME):
+        print("preflight OK: %r is addressable" % COS_NAME)
+        return 0
+    print("preflight FAILED: cannot address %r through send_task.py" % COS_NAME)
+    return 1
 
 
 def cmd_scan(a):
@@ -642,13 +673,18 @@ def cmd_scan(a):
         print("Chief of staff workspace not found in the registry. "
               "Run refresh_registry.py. Nothing handed over.")
         return 1
+    # `ws` is only for the pin/reorder calls at the end, which take a number.
+    # Deliveries go by NAME, resolved inside send_task.py at the moment of
+    # sending, because this number is stale the instant anything reorders.
+    cos_name = COS_NAME
 
     stamp = datetime.now().strftime("%Y-%m-%d %H:%M")
     for ins in pending:
         msg = PROMPT.format(stamp=stamp, heading=ins["heading"] or "(no heading)",
                             note=ins["note"], text=ins["text"], ident=ins["id"])
         if a.dry_run:
-            print("WOULD HAND TO %s [%s]: %s" % (ws, ins["id"], ins["text"][:90]))
+            print("WOULD HAND TO %r [%s]: %s"
+                  % (cos_name, ins["id"], ins["text"][:90]))
             continue
 
         tries = state.setdefault("attempts", {})
@@ -661,7 +697,28 @@ def cmd_scan(a):
                   % (ins["id"], n_so_far, ins["text"][:70]))
             continue
         last[ins["id"]] = time.time()
-        ok = deliver(ws, msg)
+        # Record the instruction BEFORE the attempt. Until 14 Oct 2026 nothing
+        # was written until a delivery was confirmed, so a brief that arrived
+        # but was not confirmed left no trace beyond a counter: the Chief of
+        # staff could do the work and then fail to tick it off, because
+        # `mark <id>` answered "Unknown instruction id".
+        state.setdefault("pending", {})[ins["id"]] = {
+            "text": ins["text"], "note": ins["note"], "note_id": ins["note_id"],
+            "occurrence": ins["occurrence"], "first_tried": stamp,
+            "workspace": cos_name}
+        save_state(state)
+        ok, blocked = deliver(cos_name, msg)
+        if blocked:
+            # The brief arrived and the session cannot work it (usage limit, API
+            # error). Retrying is pointless and hides it, so say so once per run
+            # and leave it undelivered for Stephen or the Chief of staff to
+            # re-route by hand.
+            tries = state.setdefault("attempts", {})
+            tries[ins["id"]] = tries.get(ins["id"], 0) + 1
+            print("BLOCKED [%s] %s  (Chief of staff took it but cannot work it: "
+                  "usage limit or API error. Re-route by hand.)"
+                  % (ins["id"], ins["text"][:70]))
+            continue
         if not ok:
             # Keep retrying, and NEVER move a failed delivery into `delivered`.
             # The 9 Sep 2026 failure: cmux's socket returned "Broken pipe" all
@@ -684,9 +741,10 @@ def cmd_scan(a):
         state["delivered"][ins["id"]] = {
             "text": ins["text"], "note": ins["note"], "note_id": ins["note_id"],
             "occurrence": ins["occurrence"], "handed_over": stamp,
-            "workspace": ws, "started": True}
+            "workspace": cos_name, "started": True}
         state.get("attempts", {}).pop(ins["id"], None)
-        print("handed to %s [%s] %s" % (ws, ins["id"], ins["text"][:80]))
+        state.get("pending", {}).pop(ins["id"], None)
+        print("handed to %s [%s] %s" % (cos_name, ins["id"], ins["text"][:80]))
     if not a.dry_run:
         save_state(state)
         cmux("workspace-action", "--action", "pin", "--workspace", ws)
@@ -697,6 +755,20 @@ def cmd_scan(a):
 def cmd_mark(a):
     state = load_state()
     rec = state["delivered"].get(a.ident)
+    if not rec:
+        # An instruction that was sent but never confirmed sits in `pending`.
+        # The work may well have been done: refusing to tick it off because the
+        # confirmation timed out is the wrong way round, and it is how four
+        # copies of one instruction ended up in the queue on 14 Oct 2026.
+        rec = state.get("pending", {}).get(a.ident)
+        if rec:
+            rec = dict(rec, handed_over=rec.get("first_tried"), started=True)
+            state["delivered"][a.ident] = rec
+            state.get("pending", {}).pop(a.ident, None)
+            state.get("attempts", {}).pop(a.ident, None)
+            save_state(state)
+            print("note: %s was sent but never confirmed; recording it as "
+                  "delivered now." % a.ident)
     if not rec:
         print("Unknown instruction id %s" % a.ident)
         return 1
@@ -836,6 +908,7 @@ def main():
     sc.add_argument("--dry-run", action="store_true")
     sc.set_defaults(func=cmd_scan)
 
+    sub.add_parser("preflight").set_defaults(func=cmd_preflight)
     sub.add_parser("list").set_defaults(func=cmd_list)
     sub.add_parser("target").set_defaults(func=cmd_target)
 

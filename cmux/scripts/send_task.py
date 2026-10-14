@@ -415,6 +415,17 @@ def main():
     if status == "running":
         print("CONFIRMED: %s is working it (%s)" % (label, detail))
         return 0
+    if status == "arrived-idle":
+        # The brief IS in the target's own transcript: it was typed, submitted
+        # and accepted by the right session. That is delivery, which is what
+        # this script exists to prove. Whether the session has begun its
+        # assistant turn is a different question: a busy Chief of staff queues
+        # the brief behind the task it is already running, which on 14 Oct 2026
+        # took longer than the confirmation window and made the todo-agent
+        # resend the same instruction up to four times, each resend adding
+        # another copy to the queue.
+        print("DELIVERED to %s (queued, not started yet): %s" % (label, detail))
+        return 0
     if status == "blocked":
         print("FAILED at %s: it took the brief but cannot work it. %s\n"
               "Re-route: take the next candidate from idle_rank.py and tell the "

@@ -202,6 +202,28 @@ from Password DELETES that store, so switching back leaves password mode with no
 Cure: re-run `scripts/enable_cmux_socket_password.sh`, which reads the file in whatever shape
 it is in and sets both keys.
 
+## 14 Oct 2026: a queued brief is delivered, not failed
+
+The Chief of staff queues a new brief behind whatever it is already running, so no
+assistant turn follows inside the confirmation window. `send_task.py` called that
+UNCONFIRMED, the job treated it as a failed delivery and resent it every few minutes:
+one instruction went over four times, each resend adding another copy to its queue.
+
+Two changes:
+
+1. **`send_task.py` now exits 0 on "arrived-idle"** and says DELIVERED (queued, not
+   started yet). The brief being in the target's own transcript is proof of delivery,
+   which is what the script exists to prove. Completion is a different question. A
+   marker that never appears at all is still a failure, and so is a blocked session.
+2. **Every attempt is recorded in `state["pending"]` BEFORE it is made**, carrying the
+   text, note id and occurrence. `mark <id>` promotes a pending record to delivered,
+   so an instruction that was sent, worked and never confirmed can still be ticked
+   off. It used to answer "Unknown instruction id", which is the wrong way round: the
+   work may well have been done.
+
+`tests/test_delivery_bookkeeping.py` covers the promotion and that an unknown id stays
+unknown.
+
 ## Safety
 
 - Every write backs the previous body up to `backups/` first, timestamped.
