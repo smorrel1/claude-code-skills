@@ -52,7 +52,7 @@ Save the output to `context_YYYYMMDD/summaries/gstack_retro.md` (the narrative) 
 
 ## Phase 1e: Poll active Claude Code sessions (new, 2 Sep 2026)
 
-After Phase 1c/1d, run ListAgents and SendMessage every session that worked on company matters during the reporting period. Ask each for a short summary of anything board-relevant: deals and their terms, payments and disputes, commitments made, dated facts, risks, corrections to the draft narrative. Give guidance: factual bullets with dates, no speculation, flag anything they cannot verify. Fold replies into `context_YYYYMMDD/summaries/session_<name>_summary.md`. Sessions often hold corrections the documents don't (e.g. the DeepLook completion-denial detail, 2 Sep 2026).
+After Phase 1c/1d, run ListAgents and SendMessage every session that worked on company matters during the reporting period. Ask each for a short summary of anything board-relevant: deals and their terms, payments and disputes, commitments made, dated facts, risks, corrections to the draft narrative. Give guidance: factual bullets with dates, no speculation, flag anything they cannot verify. Fold replies into `context_YYYYMMDD/summaries/session_<name>_summary.md`. Sessions often hold corrections the documents don't (e.g. a deal-status correction only the negotiating session knew).
 
 ## Phase 1d: gstack `/office-hours` (diagnose mode)
 
