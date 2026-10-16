@@ -13,6 +13,8 @@ Download transcripts from YouTube or X.com, clean them with AI, and send to Kind
 - **yt-dlp**: `brew install yt-dlp` or `pip install yt-dlp` (subtitle/audio extraction)
 - **jinja2**: `pip install jinja2` (EPUB template rendering)
 - **Calibre**: `brew install calibre` (provides `ebook-convert` for EPUB creation)
+- **Pillow**: `pip install pillow` (cover image composition and the title cover)
+- **pdf-to-kindle skill**: supplies `kindle_cover.py`, the shared cover drawer
 
 ### X.com fallback (only needed when no YouTube equivalent found)
 - **ffmpeg**: `brew install ffmpeg` (resample audio to 16kHz mono for whisper)
@@ -108,7 +110,20 @@ python3 scripts/youtube_transcript.py --to-epub transcript_structured.txt \
   --youtube-cover "https://youtube.com/watch?v=VIDEO_ID"
 ```
 
-For X.com videos, use `--cover` with a local image if you have one, or omit for no cover.
+For X.com videos, use `--cover` with a local image if you have one. Omitting it
+no longer means no cover: see below.
+
+**Every EPUB gets a cover (standing default, 16 Oct 2026).** When no artwork is
+supplied or the download fails, the script draws a plain title cover (1600x2560,
+deep blue #0d47a1, title in white Arial Bold, channel name beneath) using
+`~/.claude/skills/pdf-to-kindle/scripts/kindle_cover.py`. A coverless EPUB gets
+the same generic DOC icon as every other one on the Kindle, which makes a shelf
+of transcripts impossible to tell apart.
+
+**Wide tables become lists.** A table of more than three columns reflows into
+unreadable fragments at Kindle's ten-or-so words a line, so `--to-epub` rewrites
+each row as a labelled block of `Column: value` lines. Two and three-column
+tables pass through.
 
 **Cover handling (automatic, added 20 Sep 2026):** the script normalizes every cover to a real JPEG (YouTube serves WebP behind .jpg URLs; Amazon's Send-to-Kindle silently drops a mislabeled cover and shows a generic DOC placeholder), and when the graphic is landscape/squarish (aspect w/h > 0.75, i.e. any video thumbnail) it composes a designed 1600x2560 portrait cover: title set in Georgia Bold in the top block, accent rule and author line (both auto-fitted), artwork full-bleed in the lower half, background gradient and accent colour derived from the artwork. A true portrait cover image passes through untouched. Requires PIL for composition (falls back to the raw JPEG without it).
 
@@ -163,6 +178,7 @@ python3 ~/.claude/skills/email/scripts/gmail_utils.py --account gmail send \
 | `--author` | Author name for EPUB metadata |
 | `--cover IMAGE` | Use local image file as cover |
 | `--youtube-cover URL` | Download YouTube thumbnail as cover |
+| (neither) | A plain title cover is drawn automatically |
 | `--output` | Output file path |
 
 ## Workflow for Claude

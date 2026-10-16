@@ -524,6 +524,27 @@ def ensure_jpeg(path: str) -> str:
         return None
 
 
+_COVER_LIB = os.path.expanduser('~/.claude/skills/pdf-to-kindle/scripts')
+if _COVER_LIB not in sys.path:
+    sys.path.insert(0, _COVER_LIB)
+try:
+    from kindle_cover import make_cover as _make_cover, tables_to_lists
+except ImportError:  # the pdf-to-kindle skill is not installed
+    _make_cover = None
+
+    def tables_to_lists(text, max_cols=3, style='markdown'):
+        return text
+
+
+def title_cover(title: str, author: str = None, output_path: str = None) -> str:
+    """Draw a plain title cover for a transcript that has no artwork."""
+    if _make_cover is None:
+        print("Warning: kindle_cover not found, so no cover image; install "
+              "the pdf-to-kindle skill", file=sys.stderr)
+        return None
+    return _make_cover(title, [author] if author else [], output_path)
+
+
 def compose_cover(image_path: str, title: str, author: str = None,
                   output_path: str = None) -> str:
     """Compose a portrait Kindle cover (1600x2560) from a landscape/squarish
@@ -742,6 +763,9 @@ def text_to_epub(text: str, title: str = "YouTube Transcript",
     script_dir = os.path.dirname(os.path.abspath(__file__))
     template_dir = os.path.join(os.path.dirname(script_dir), 'templates')
 
+    # Wide tables reflow into confetti at Kindle's ~10 words a line.
+    text = tables_to_lists(text, style='plain')
+
     # Clean the text (remove markdown headers that may have been added)
     text = re.sub(r'^#\s+[^\n]+\n*', '', text)
     text = re.sub(r'^Source:\s*[^\n]+\n*', '', text)
@@ -789,7 +813,14 @@ def text_to_epub(text: str, title: str = "YouTube Transcript",
 
     date_str = datetime.now().strftime("%Y-%m-%d")
 
-    # Copy cover image if provided
+    # Copy cover image if provided. When none is, draw a title cover rather
+    # than shipping a coverless EPUB: Send-to-Kindle gives those all the same
+    # generic DOC icon, so a shelf of them is indistinguishable.
+    drawn_cover = None
+    if not (cover_image and os.path.exists(cover_image)):
+        drawn_cover = os.path.join(build_dir, 'drawn_cover.jpg')
+        cover_image = title_cover(title, author, drawn_cover)
+
     cover_filename = None
     if cover_image and os.path.exists(cover_image):
         # Always normalize to a real JPEG named cover.jpg — a WebP/PNG with a
@@ -798,8 +829,12 @@ def text_to_epub(text: str, title: str = "YouTube Transcript",
         cover_build_path = os.path.join(build_dir, cover_filename)
         shutil.copy(cover_image, cover_build_path)
         if ensure_jpeg(cover_build_path) is None:
+            # The artwork is unusable, so fall back to a drawn title cover
+            # rather than shipping the EPUB with the generic DOC icon.
             os.remove(cover_build_path)
             cover_filename = None
+            if drawn_cover is None and title_cover(title, author, cover_build_path):
+                cover_filename = 'cover.jpg'
         else:
             # A proper book cover is portrait (~0.625 w/h). Landscape or
             # squarish graphics (video thumbnails) render as a thin band in
