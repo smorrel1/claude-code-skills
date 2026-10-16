@@ -38,6 +38,10 @@ register change: the result still has to sound like Stephen, which is what the C
 voice pass protects. Strict STE100 would read like a maintenance manual to an
 investor, so the dictionary is deliberately not applied.
 
+**Stephen can waive this for a particular email**, and sometimes will: a legal
+letter or a clinical document may need its own wording. He has to say so for that
+email. Absent that, this is the style, the same way humanizer is.
+
 **Never tell a recipient the result is ASD-STE100 compliant.** It follows the
 principles; it does not apply the controlled vocabulary, so the claim would be false.
 
@@ -189,6 +193,14 @@ Failure mode to avoid: dumping a draft ID like `r-736357406714828559` into user-
 Failure mode to avoid: the user asks for a follow-up note to a person they corresponded with recently, and the model uses `--new` because the most recent message in that thread was the user's own outbound. The user sees a fresh-thread draft, has to call it out, and asks for a redo. This has happened repeatedly. Treat threading as the default and starting fresh as the explicit exception.
 
 ## CRITICAL: Preserve user edits when revising a draft
+
+**STEPHEN'S STANDING INSTRUCTION (re-emphasised 16 Oct 2026 after edits were lost AGAIN): whenever composing or revising ANY email, first check every draft on the thread for recent edits by Stephen, and build on those. Losing his edits is the single most-repeated failure of this skill.** Concretely, immediately before writing anything:
+
+1. Enumerate ALL drafts on the target thread (drafts.list filtered by threadId), not just the one you remember creating. Gmail re-keys edited drafts: an id starting `draft-rewrite-` or a 404 on an id you held minutes ago is POSITIVE EVIDENCE a mail client has touched the draft.
+2. Re-read each draft's live body at that moment and diff it against the text you last wrote. Any difference is Stephen's edit; your new version must be built on HIS text.
+3. **Client-side edits can be invisible to the API.** Stephen often has the draft open in Mac Mail or iPhone Mail; edits there sync to Gmail late or not until he closes the window. If id churn or timing suggests a compose window may be open, DO NOT update that draft in place, because the API copy you would overwrite is not the newest version. Create a SEPARATE new draft (or hand the text over in TextEdit), tell him his open copy was left untouched, and let him merge.
+4. After any update, state explicitly in the reply which draft (by save time) is current and that his prior copies were preserved.
+
 
 **MANDATORY.** The user routinely edits drafts in Gmail between turns. NEVER assume your last-known version is the current draft. Before creating a revised version of any draft you previously saved (and during ANY follow-up email task, even if the user has only asked you to change one thing), you MUST diff for user edits and bring them forward.
 
