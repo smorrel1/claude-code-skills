@@ -9,6 +9,20 @@ Skills are reusable modules that extend Claude Code's capabilities. Each skill p
 - Scripts and utilities the skill uses to perform tasks
 - Documentation for setup and usage
 
+## Install in one command
+
+Works with skills.sh tooling in Claude Code, Codex CLI and compatible agents:
+
+```bash
+npx skills add smorrel1/claude-code-skills@ce-to-510k     # FDA 510(k) porting, written from a real clearance
+npx skills add smorrel1/claude-code-skills@after-meeting  # transcript -> summary -> follow-up drafts
+npx skills add smorrel1/claude-code-skills@email          # multi-account Gmail with draft-safety guards
+```
+
+Or clone everything: `git clone https://github.com/smorrel1/claude-code-skills ~/.claude/skills`
+
+These skills come from daily use running a regulated medical-AI company solo: the `ce-to-510k` skill was written from an actual FDA clearance, the email and meeting skills run a real CEO workload every day. Feedback and issues welcome.
+
 ## Available Skills
 
 | Skill | Description | Setup Required |
