@@ -1,0 +1,20 @@
+# claude-code-skills
+
+> Practitioner-built agent skills: FDA 510(k) porting, meeting automation, email, transcripts to Kindle, AI-tell removal.
+
+## Skills
+
+- [after-meeting](https://raw.githubusercontent.com/smorrel1/claude-code-skills/HEAD/after-meeting/SKILL.md): 
+- [apple-notes](https://raw.githubusercontent.com/smorrel1/claude-code-skills/HEAD/apple-notes/SKILL.md): 
+- [ce-to-510k](https://raw.githubusercontent.com/smorrel1/claude-code-skills/HEAD/ce-to-510k/SKILL.md): 
+- [cmux](https://raw.githubusercontent.com/smorrel1/claude-code-skills/HEAD/cmux/SKILL.md): 
+- [docx-delta](https://raw.githubusercontent.com/smorrel1/claude-code-skills/HEAD/docx-delta/SKILL.md): 
+- [docx-editor](https://raw.githubusercontent.com/smorrel1/claude-code-skills/HEAD/docx-editor/SKILL.md): 
+- [email](https://raw.githubusercontent.com/smorrel1/claude-code-skills/HEAD/email/SKILL.md): 
+- [gsheet](https://raw.githubusercontent.com/smorrel1/claude-code-skills/HEAD/gsheet/SKILL.md): 
+- [humanizer](https://raw.githubusercontent.com/smorrel1/claude-code-skills/HEAD/humanizer/SKILL.md): | Remove signs of AI-generated writing from text. Use when editing or reviewing text to make it sound more natural and human-written. Based on Wikipedia's comprehensive "Signs of AI writing" guide. De
+- [interview-transcript](https://raw.githubusercontent.com/smorrel1/claude-code-skills/HEAD/interview-transcript/SKILL.md): 
+- [monthly-report](https://raw.githubusercontent.com/smorrel1/claude-code-skills/HEAD/monthly-report/SKILL.md): 
+- [pdf-to-kindle](https://raw.githubusercontent.com/smorrel1/claude-code-skills/HEAD/pdf-to-kindle/SKILL.md): 
+- [todo-agent](https://raw.githubusercontent.com/smorrel1/claude-code-skills/HEAD/todo-agent/SKILL.md): 
+- [zoom-downloader](https://raw.githubusercontent.com/smorrel1/claude-code-skills/HEAD/zoom-downloader/SKILL.md): 

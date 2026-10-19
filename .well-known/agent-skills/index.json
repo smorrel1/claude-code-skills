@@ -1,0 +1,103 @@
+{
+  "version": 1,
+  "skills": [
+    {
+      "name": "after-meeting",
+      "description": "",
+      "type": "agent-skill",
+      "url": "https://raw.githubusercontent.com/smorrel1/claude-code-skills/HEAD/after-meeting/SKILL.md",
+      "sha256": "97b529e726de9bb0f2ac5865fba5d08fb5d87c6c9f9d49a40f7fdfd9c5216ed0"
+    },
+    {
+      "name": "apple-notes",
+      "description": "",
+      "type": "agent-skill",
+      "url": "https://raw.githubusercontent.com/smorrel1/claude-code-skills/HEAD/apple-notes/SKILL.md",
+      "sha256": "997b4db69dcdfae8818fd11de1e84c0fbf98512a977164cf278ba76c63803a16"
+    },
+    {
+      "name": "ce-to-510k",
+      "description": "",
+      "type": "agent-skill",
+      "url": "https://raw.githubusercontent.com/smorrel1/claude-code-skills/HEAD/ce-to-510k/SKILL.md",
+      "sha256": "a9a62ebee0c9145a9e893812a6ebe12f71d257e685479ac30bbe07569263998d"
+    },
+    {
+      "name": "cmux",
+      "description": "",
+      "type": "agent-skill",
+      "url": "https://raw.githubusercontent.com/smorrel1/claude-code-skills/HEAD/cmux/SKILL.md",
+      "sha256": "0fa6169917e424805da48c180ff07d182027439f20dba4ea29dc254d56926f39"
+    },
+    {
+      "name": "docx-delta",
+      "description": "",
+      "type": "agent-skill",
+      "url": "https://raw.githubusercontent.com/smorrel1/claude-code-skills/HEAD/docx-delta/SKILL.md",
+      "sha256": "9f4fea064a34461cf509d992a4cccde45aa754f97f0902742b7f7b2d41235180"
+    },
+    {
+      "name": "docx-editor",
+      "description": "",
+      "type": "agent-skill",
+      "url": "https://raw.githubusercontent.com/smorrel1/claude-code-skills/HEAD/docx-editor/SKILL.md",
+      "sha256": "468a0562ba0db884c31a6519e8f6804954668c45892a8435a5ae74106afbdde7"
+    },
+    {
+      "name": "email",
+      "description": "",
+      "type": "agent-skill",
+      "url": "https://raw.githubusercontent.com/smorrel1/claude-code-skills/HEAD/email/SKILL.md",
+      "sha256": "deeb4b888df897ede7a6c6dca33aebdeb16dd616a6e2d91d847678a12675dacf"
+    },
+    {
+      "name": "gsheet",
+      "description": "",
+      "type": "agent-skill",
+      "url": "https://raw.githubusercontent.com/smorrel1/claude-code-skills/HEAD/gsheet/SKILL.md",
+      "sha256": "f7ade4b789fb0b83503bccea22d7956e88eabc0e7d9da572f1a693a04aaed86b"
+    },
+    {
+      "name": "humanizer",
+      "description": "| Remove signs of AI-generated writing from text. Use when editing or reviewing text to make it sound more natural and human-written. Based on Wikipedia's comprehensive \"Signs of AI writing\" guide. De",
+      "type": "agent-skill",
+      "url": "https://raw.githubusercontent.com/smorrel1/claude-code-skills/HEAD/humanizer/SKILL.md",
+      "sha256": "d3de54a3abfb1c25f5bf50f8fd3f5adddf1dd42deae6579a52365ea05e883360"
+    },
+    {
+      "name": "interview-transcript",
+      "description": "",
+      "type": "agent-skill",
+      "url": "https://raw.githubusercontent.com/smorrel1/claude-code-skills/HEAD/interview-transcript/SKILL.md",
+      "sha256": "9d26ba28aa6c1135f003f200d0e5c1393d17f1f0b515694ebb112c02c99e5a6d"
+    },
+    {
+      "name": "monthly-report",
+      "description": "",
+      "type": "agent-skill",
+      "url": "https://raw.githubusercontent.com/smorrel1/claude-code-skills/HEAD/monthly-report/SKILL.md",
+      "sha256": "f60d7d7b8dbfa4a679e80dd7dcdf98c1477e265d448fb80706222d8de269bb61"
+    },
+    {
+      "name": "pdf-to-kindle",
+      "description": "",
+      "type": "agent-skill",
+      "url": "https://raw.githubusercontent.com/smorrel1/claude-code-skills/HEAD/pdf-to-kindle/SKILL.md",
+      "sha256": "1a143dcaa4e5d026d36f921c588bea664ae6ed402b9afc6eb3a121db93b0337c"
+    },
+    {
+      "name": "todo-agent",
+      "description": "",
+      "type": "agent-skill",
+      "url": "https://raw.githubusercontent.com/smorrel1/claude-code-skills/HEAD/todo-agent/SKILL.md",
+      "sha256": "15d70276c566e7a7b7c62ba3c964fa4c5e5f4ac50769828d6b9463b2368eff25"
+    },
+    {
+      "name": "zoom-downloader",
+      "description": "",
+      "type": "agent-skill",
+      "url": "https://raw.githubusercontent.com/smorrel1/claude-code-skills/HEAD/zoom-downloader/SKILL.md",
+      "sha256": "ca33cc2c4c9423f893664be4e92e54c8cdb4a6b30ef4a5a793e152125c30e8cf"
+    }
+  ]
+}
