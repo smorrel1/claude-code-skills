@@ -19,7 +19,11 @@ npx skills add smorrel1/claude-code-skills@after-meeting  # transcript -> summar
 npx skills add smorrel1/claude-code-skills@email          # multi-account Gmail with draft-safety guards
 ```
 
-Or clone everything: `git clone https://github.com/smorrel1/claude-code-skills ~/.claude/skills`
+Or install everything with one command (non-destructive, symlinks into `~/.claude/skills`):
+
+```bash
+curl -fsSL https://smorrel1.github.io/claude-code-skills/install.sh | bash
+```
 
 These skills come from daily use running a regulated medical-AI company solo: the `ce-to-510k` skill was written from an actual FDA clearance, the email and meeting skills run a real CEO workload every day. Feedback and issues welcome.
 

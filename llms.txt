@@ -2,19 +2,21 @@
 
 > Practitioner-built agent skills: FDA 510(k) porting, meeting automation, email, transcripts to Kindle, AI-tell removal.
 
+Install: curl -fsSL https://smorrel1.github.io/claude-code-skills/install.sh | bash
+
 ## Skills
 
-- [after-meeting](https://raw.githubusercontent.com/smorrel1/claude-code-skills/HEAD/after-meeting/SKILL.md): 
-- [apple-notes](https://raw.githubusercontent.com/smorrel1/claude-code-skills/HEAD/apple-notes/SKILL.md): 
-- [ce-to-510k](https://raw.githubusercontent.com/smorrel1/claude-code-skills/HEAD/ce-to-510k/SKILL.md): 
-- [cmux](https://raw.githubusercontent.com/smorrel1/claude-code-skills/HEAD/cmux/SKILL.md): 
-- [docx-delta](https://raw.githubusercontent.com/smorrel1/claude-code-skills/HEAD/docx-delta/SKILL.md): 
-- [docx-editor](https://raw.githubusercontent.com/smorrel1/claude-code-skills/HEAD/docx-editor/SKILL.md): 
-- [email](https://raw.githubusercontent.com/smorrel1/claude-code-skills/HEAD/email/SKILL.md): 
-- [gsheet](https://raw.githubusercontent.com/smorrel1/claude-code-skills/HEAD/gsheet/SKILL.md): 
-- [humanizer](https://raw.githubusercontent.com/smorrel1/claude-code-skills/HEAD/humanizer/SKILL.md): | Remove signs of AI-generated writing from text. Use when editing or reviewing text to make it sound more natural and human-written. Based on Wikipedia's comprehensive "Signs of AI writing" guide. De
-- [interview-transcript](https://raw.githubusercontent.com/smorrel1/claude-code-skills/HEAD/interview-transcript/SKILL.md): 
-- [monthly-report](https://raw.githubusercontent.com/smorrel1/claude-code-skills/HEAD/monthly-report/SKILL.md): 
-- [pdf-to-kindle](https://raw.githubusercontent.com/smorrel1/claude-code-skills/HEAD/pdf-to-kindle/SKILL.md): 
-- [todo-agent](https://raw.githubusercontent.com/smorrel1/claude-code-skills/HEAD/todo-agent/SKILL.md): 
-- [zoom-downloader](https://raw.githubusercontent.com/smorrel1/claude-code-skills/HEAD/zoom-downloader/SKILL.md): 
+- [after-meeting](https://raw.githubusercontent.com/smorrel1/claude-code-skills/HEAD/after-meeting/SKILL.md): Post-meeting automation. Exports Apple Notes, finds the meeting note and Zoom/Fireflies transcript, writes a structured summary, appends it to the Apple Note, drafts follow-up emails, and saves the tr
+- [apple-notes](https://raw.githubusercontent.com/smorrel1/claude-code-skills/HEAD/apple-notes/SKILL.md): Export Apple Notes to markdown files AND edit/append to existing notes. Use when you need to search, analyze, or modify Apple Notes content.
+- [ce-to-510k](https://raw.githubusercontent.com/smorrel1/claude-code-skills/HEAD/ce-to-510k/SKILL.md): Port CE Mark / UKCA medical device technical documentation into an FDA 510(k) submission package for AI/ML SaMD (Software as a Medical Device). Use when a user (typically a non-US medical device manuf
+- [cmux](https://raw.githubusercontent.com/smorrel1/claude-code-skills/HEAD/cmux/SKILL.md): Manage Stephen's 30-50 Claude Code sessions running in cmux workspaces. Use when asked "which session/workspace handles X", to delegate a task to another session, foreground a workspace, prep for a ca
+- [docx-delta](https://raw.githubusercontent.com/smorrel1/claude-code-skills/HEAD/docx-delta/SKILL.md): Compare two Word documents and produce a delta view, as a redline .docx with real tracked changes that Word's Review pane can accept or reject, a side-by-side HTML page, or a unified text diff. Use wh
+- [docx-editor](https://raw.githubusercontent.com/smorrel1/claude-code-skills/HEAD/docx-editor/SKILL.md): Word document (.docx) utilities including character normalization for fixing smart quotes, em dashes, and other special characters that break find-and-replace operations. Use when editing Word documen
+- [email](https://raw.githubusercontent.com/smorrel1/claude-code-skills/HEAD/email/SKILL.md): Email integration for reading, searching, and drafting emails with attachments via Gmail API. Use when composing emails, creating drafts, searching inbox, or reading messages. CRITICAL - Email bodies 
+- [gsheet](https://raw.githubusercontent.com/smorrel1/claude-code-skills/HEAD/gsheet/SKILL.md): Read and write Google Sheets data including specific sheets and ranges. Auto-triggers when user shares a Google Sheets URL (docs.google.com/spreadsheets). Supports listing sheets, reading/writing cell
+- [humanizer](https://raw.githubusercontent.com/smorrel1/claude-code-skills/HEAD/humanizer/SKILL.md): Remove signs of AI-generated writing from text. Use when editing or reviewing text to make it sound more natural and human-written. Based on Wikipedia's comprehensive "Signs of AI writing" guide. Dete
+- [interview-transcript](https://raw.githubusercontent.com/smorrel1/claude-code-skills/HEAD/interview-transcript/SKILL.md): Download and transcribe interviews/talks from YouTube videos and X.com (Twitter) videos/Spaces. Clean transcripts with Claude (removing filler words and transcription errors while preserving facts), a
+- [monthly-report](https://raw.githubusercontent.com/smorrel1/claude-code-skills/HEAD/monthly-report/SKILL.md): Generate monthly board reports. Collects data from Apple Notes, Fireflies, Gmail, and documents, then synthesizes into formatted report. Use when asked to prepare monthly board update or monthly repor
+- [pdf-to-kindle](https://raw.githubusercontent.com/smorrel1/claude-code-skills/HEAD/pdf-to-kindle/SKILL.md): Extract text from PDFs and send to Kindle for comfortable reading. Use when the user wants to (1) send a PDF to Kindle, (2) convert a PDF for Kindle reading, (3) extract text from a PDF and email it t
+- [todo-agent](https://raw.githubusercontent.com/smorrel1/claude-code-skills/HEAD/todo-agent/SKILL.md): Two-way channel between Stephen's Apple Notes To Do list and his cmux agents. Prepends follow-up actions near the top of the note, and every five minutes picks up any line starting with claude (the @ 
+- [zoom-downloader](https://raw.githubusercontent.com/smorrel1/claude-code-skills/HEAD/zoom-downloader/SKILL.md): Move Zoom Docs transcript exports from ~/Downloads into the transcripts folder with a date-stamped filename
