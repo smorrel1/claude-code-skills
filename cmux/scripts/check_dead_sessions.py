@@ -36,6 +36,7 @@ import os
 import re
 import subprocess
 import sys
+import tempfile
 import time
 from datetime import datetime, timedelta
 
@@ -150,14 +151,19 @@ def revive(row, wait=75):
     return False, "no Claude prompt after %ds" % wait
 
 
-def lost_briefs(days=5):
+def lost_briefs(days=5, scan_screens=False):
     """Briefs that landed in a shell, from the panels and the task files.
 
     Two sources: what is still on a dead panel's screen, and brief files in
     state/tasks written in the window, whose marker never reached a session.
     """
     found = []
-    for row in survey():
+    # The screen scan reads every panel one at a time and costs well over a
+    # minute, while the file check below answers the real question in seconds.
+    # So it is off unless asked for: a dead panel's scrollback is only worth
+    # reading BEFORE anything is revived, which is a deliberate choice, not a
+    # default. (Reviving first on 20 Oct 2026 scrolled the evidence away.)
+    for row in (survey() if scan_screens else []):
         if row.get("swallowed"):
             text = screen(row["panel"], 40)
             for m in re.finditer(r"marker[:\s]+([0-9a-z-]+)", text):
@@ -171,6 +177,8 @@ def lost_briefs(days=5):
     cutoff = datetime.now() - timedelta(days=days)
     recent = []
     for name in (sorted(os.listdir(TASKS)) if os.path.isdir(TASKS) else []):
+        if not name.endswith("-brief.md"):
+            continue          # result files and notes live here too, not just briefs
         path = os.path.join(TASKS, name)
         try:
             if datetime.fromtimestamp(os.path.getmtime(path)) < cutoff:
@@ -190,12 +198,45 @@ def lost_briefs(days=5):
             capture_output=True, text=True, timeout=120).stdout.split("\n")
         files = [f for f in files if f.strip()]
         seen = set()
-        for i in range(0, len(files), 200):           # keep the argv short
-            grep = subprocess.run(
-                ["grep", "-hoF"] + sum([["-e", m] for _, _, m in recent], [])
-                + files[i:i + 200],
-                capture_output=True, text=True, timeout=300)
-            seen.update(grep.stdout.split())
+        # Patterns go in a file for `grep -f`, which builds one automaton for
+        # the lot. Passing the same 69 patterns as separate -e flags makes BSD
+        # grep crawl: it timed out after 300s on 1.1GB on 20 Oct 2026, where
+        # the -f form finished the same search in seconds.
+        # Read the transcripts here rather than shelling out to grep. Three
+        # grep shapes were tried on 20 Oct 2026 and all behaved unpredictably
+        # on this corpus, one finishing in 0.4s from a shell and then hanging
+        # past 300s on the same files minutes later. This is slower at its
+        # best and bounded at its worst, which is the better trade for
+        # something that runs unattended every 15 minutes.
+        # Look for the DELIVERY phrase, not the bare marker. A marker appears
+        # in a transcript merely by being discussed: the session that wrote
+        # the brief has it, and so does any session that mentions it. Testing
+        # the bare marker on 20 Oct 2026 scored a brief that had never been
+        # sent as delivered, because the test itself had named it.
+        # This is still a proxy, not proof: a session that quotes the whole
+        # delivery line will also match. It errs towards saying nothing was
+        # lost, so treat a hit as worth chasing and silence as weak evidence.
+        probe = {"act on it now (marker: %s)" % m: m for _, _, m in recent}
+        outstanding = set(probe)
+        for path in files:
+            if not outstanding:
+                break                       # every marker already accounted for
+            try:
+                with open(path, "rb") as fh:
+                    tail = b""
+                    while chunk := fh.read(4 << 20):
+                        blob = (tail + chunk).decode("utf-8", "ignore")
+                        for phrase in list(outstanding):
+                            if phrase in blob:
+                                outstanding.discard(phrase)
+                                seen.add(probe[phrase])
+                        if not outstanding:
+                            break
+                        # Overlap, so a marker split across a chunk boundary
+                        # is still found.
+                        tail = chunk[-128:]
+            except OSError:
+                continue
         for name, path, marker in recent:
             if marker in seen:
                 continue
@@ -218,12 +259,15 @@ def main():
     ap.add_argument("--json", action="store_true")
     ap.add_argument("--lost-briefs", action="store_true",
                     help="list briefs that were typed into a shell")
+    ap.add_argument("--scan-screens", action="store_true",
+                    help="also read every panel's scrollback (slow; only "
+                         "meaningful before anything has been revived)")
     ap.add_argument("--quiet", action="store_true",
                     help="print nothing unless something was revived or failed")
     a = ap.parse_args()
 
     if a.lost_briefs:
-        items = lost_briefs()
+        items = lost_briefs(scan_screens=a.scan_screens)
         print(json.dumps(items, indent=1) if a.json else
               "\n".join("%-44s %-36s %s" % (x["target"][:44], x["marker"], x["source"])
                         for x in items) or "nothing swallowed in the window")
