@@ -202,12 +202,16 @@ def lost_briefs(days=5, scan_screens=False):
         # the lot. Passing the same 69 patterns as separate -e flags makes BSD
         # grep crawl: it timed out after 300s on 1.1GB on 20 Oct 2026, where
         # the -f form finished the same search in seconds.
-        # Read the transcripts here rather than shelling out to grep. Three
-        # grep shapes were tried on 20 Oct 2026 and all behaved unpredictably
-        # on this corpus, one finishing in 0.4s from a shell and then hanging
-        # past 300s on the same files minutes later. This is slower at its
-        # best and bounded at its worst, which is the better trade for
-        # something that runs unattended every 15 minutes.
+        # Read the transcripts here rather than shelling out to grep. On this
+        # corpus (20 Oct 2026, ~110 transcripts, 1.1GB) grep's cost swung by
+        # three orders of magnitude for no reason worth chasing: the same
+        # patterns over the same files took 0.4s when the paths were passed
+        # directly, and 13 minutes of solid CPU when passed through xargs.
+        # It was burning processor, not blocked on disk, and setting LC_ALL=C
+        # changed nothing. Python reads each file once, stops as soon as every
+        # marker is accounted for, and takes about 6 seconds. Slower than
+        # grep's best case, far faster than its worst, and above all
+        # predictable, which is what an unattended 15-minute job needs.
         # Look for the DELIVERY phrase, not the bare marker. A marker appears
         # in a transcript merely by being discussed: the session that wrote
         # the brief has it, and so does any session that mentions it. Testing
