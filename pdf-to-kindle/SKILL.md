@@ -52,6 +52,21 @@ pandoc book.md -o book.epub --epub-cover-image=cover.jpg
 
 Calibre's equivalent, which is what this skill uses, is `ebook-convert ... --cover cover.jpg`.
 
+## Every document opens on a clickable contents list (16 Oct 2026, extended 20 Oct)
+
+A Kindle has no scroll bar and no search worth the name, so a document that
+opens on page one of eight hundred cannot be navigated. Every EPUB therefore
+starts with a linked Contents list, each entry an anchor link to its section,
+and the same headings populate the Kindle's own Go-to menu.
+
+Headings are found from Markdown `#`, `##` and `###` where the text has them.
+Where it does not, a cautious shape test is used: a short line, no closing
+full stop, a blank line above and below, in capitals or title case. It errs
+towards missing a heading, because a false one puts nonsense in the contents.
+
+The `full` workflow now extracts to HTML rather than plain text, since that is
+the step where the contents list is built.
+
 ## Wide tables become lists
 
 Stephen reads about ten words to a line on the Kindle, so a table of more than

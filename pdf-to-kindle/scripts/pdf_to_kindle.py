@@ -10,6 +10,7 @@ Usage:
 """
 
 import argparse
+import re
 import subprocess
 import sys
 import os
@@ -89,31 +90,107 @@ def extract_text(input_path: str, output_path: str, preserve_columns: bool = Fal
     return output_path
 
 
+HEADING_MD = re.compile(r'^(#{1,3})\s+(.{2,100})$')
+
+
+def find_headings(lines):
+    """Spot section headings so the document can carry a real contents list.
+
+    Markdown headings win outright when the text has any. Otherwise fall back
+    to a deliberately cautious shape test: a short line, no closing full stop,
+    blank line underneath, in caps or title case. A missed heading costs one
+    contents entry; a false one puts nonsense in the contents, so the test
+    errs towards missing.
+    """
+    md = [(i, m.group(2).strip()) for i, ln in enumerate(lines)
+          if (m := HEADING_MD.match(ln.strip()))]
+    if md:
+        return md
+
+    out = []
+    for i, raw in enumerate(lines):
+        ln = raw.strip()
+        if not (2 < len(ln) <= 80) or ln.endswith(('.', ',', ';', ':')):
+            continue
+        if i + 1 < len(lines) and lines[i + 1].strip():
+            continue                      # no blank line under it
+        if i and lines[i - 1].strip():
+            continue                      # no blank line over it
+        words = ln.split()
+        if not (1 < len(words) <= 12):
+            continue
+        alpha = [w for w in words if w[:1].isalpha()]
+        if not alpha:
+            continue
+        capped = sum(1 for w in alpha if w[0].isupper())
+        if ln.isupper() or capped >= max(2, int(len(alpha) * 0.7)):
+            out.append((i, ln))
+    return out[:200]
+
+
 def text_to_html(text: str, title: str = "Document") -> str:
-    """Convert plain text to HTML."""
-    # Escape HTML entities
-    text = text.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+    """Convert plain text to HTML with a clickable contents list on top.
 
-    # Convert line breaks to paragraphs
-    paragraphs = text.split("\n\n")
-    html_paragraphs = [f"<p>{p.replace(chr(10), '<br>')}</p>" for p in paragraphs if p.strip()]
+    Stephen reads these on a Kindle, where there is no scroll bar and no
+    search worth the name, so a document that opens on page one of eight
+    hundred is unusable. Every document therefore opens on a linked contents
+    list, and `to_epub` points Calibre at the same headings so the Kindle's
+    own Go-to menu is populated as well.
+    """
+    lines = text.split("\n")
+    heads = dict(find_headings(lines))
 
-    html = f"""<!DOCTYPE html>
+    def esc(t):
+        return t.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+
+    body, toc, n = [], [], 0
+    para = []
+
+    def flush():
+        if para:
+            chunk = "<br>".join(esc(x) for x in para if x.strip())
+            if chunk:
+                body.append("<p>%s</p>" % chunk)
+            para.clear()
+
+    for i, raw in enumerate(lines):
+        if i in heads:
+            flush()
+            n += 1
+            anchor = "sec%d" % n
+            label = re.sub(r'^#{1,3}\s+', '', heads[i]).strip()
+            toc.append('<li><a href="#%s">%s</a></li>' % (anchor, esc(label)))
+            body.append('<h2 id="%s">%s</h2>' % (anchor, esc(label)))
+        elif raw.strip():
+            para.append(raw)
+        else:
+            flush()
+    flush()
+
+    nav = ""
+    if toc:
+        nav = ('<nav id="toc" class="toc"><h2>Contents</h2><ol>%s</ol></nav>'
+               '<div style="page-break-after:always"></div>' % "".join(toc))
+
+    return """<!DOCTYPE html>
 <html>
 <head>
 <meta http-equiv="Content-Type" content="text/html; charset=utf-8">
-<title>{title}</title>
+<title>%s</title>
 <style>
-body {{ font-family: Georgia, serif; line-height: 1.6; max-width: 800px; margin: 0 auto; padding: 20px; }}
-p {{ margin-bottom: 1em; }}
+body { font-family: Georgia, serif; line-height: 1.6; max-width: 800px; margin: 0 auto; padding: 20px; }
+p { margin-bottom: 1em; }
+h2 { margin-top: 1.4em; }
+nav.toc ol { line-height: 2; padding-left: 1.2em; }
+nav.toc a { text-decoration: none; }
 </style>
 </head>
 <body>
-<h1>{title}</h1>
-{"".join(html_paragraphs)}
+<h1>%s</h1>
+%s
+%s
 </body>
-</html>"""
-    return html
+</html>""" % (esc(title), esc(title), nav, "".join(body))
 
 
 def text_to_markdown(text: str) -> str:
@@ -141,6 +218,12 @@ def to_epub(input_path: str, output_path: str, title: str = "Document", author: 
     cmd = ["ebook-convert", input_path, output_path, "--title", title]
     if author:
         cmd.extend(["--authors", author])
+
+    # Build the Kindle's own Go-to menu from the same <h2> anchors the
+    # on-page contents list links to, so both routes agree.
+    if input_path.lower().endswith(('.html', '.htm', '.xhtml')):
+        cmd.extend(["--level1-toc", "//h:h2", "--toc-title", "Contents",
+                    "--max-toc-links", "300", "--duplicate-links-in-toc"])
 
     cover_tmp = None
     if not no_cover:
@@ -205,8 +288,11 @@ def full_workflow(input_path: str, title: str, preserve_columns: bool = False,
     """Complete workflow: extract -> convert to EPUB -> send to Kindle."""
     with tempfile.TemporaryDirectory() as tmpdir:
         # Step 1: Extract text
-        txt_path = os.path.join(tmpdir, "extracted.txt")
-        extract_text(input_path, txt_path, preserve_columns=preserve_columns)
+        # HTML, not plain text: the contents list is built during the HTML
+        # step, and Calibre reads its nav TOC from those same <h2> anchors.
+        txt_path = os.path.join(tmpdir, "extracted.html")
+        extract_text(input_path, txt_path, preserve_columns=preserve_columns,
+                     output_format="html")
 
         # Step 2: Convert to EPUB
         # Use title as filename for better Kindle display
