@@ -289,10 +289,34 @@ def spool(text, slug=None):
     return path
 
 
+def shell_not_claude(target):
+    """Is this panel sitting at a bare shell prompt instead of running Claude?
+
+    A dead panel looks alive. Typing a brief into it hands the text to zsh,
+    which answers "zsh: no matches found: (marker ...)" and the work is gone
+    with nobody told. A request to 'demo.elaitra zip' vanished that way on
+    19 Oct 2026, so nothing is typed now until the target is known to be
+    Claude. Any doubt counts as safe: only a confident shell reading blocks.
+    """
+    try:
+        sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+        import check_dead_sessions as D
+        return D.classify(screen(target)) == "DEAD"
+    except Exception:
+        return False
+
+
 def send_task(target, text, slug=None):
     """Returns (submitted, line, marker, screen). The marker is the phrase to
     grep for in the target's transcript to prove the brief reached it."""
     text = text.strip()
+    if shell_not_claude(target):
+        return (False, "", "",
+                "TARGET IS A BARE SHELL, nothing was typed. Revive it first:\n"
+                "  python3 %s --apply\n"
+                "then send again."
+                % os.path.join(os.path.dirname(os.path.abspath(__file__)),
+                               "check_dead_sessions.py"))
     if "\n" in text or len(text) > INLINE_MAX:
         path = spool(text, slug)
         marker = os.path.basename(path).replace("-brief.md", "")

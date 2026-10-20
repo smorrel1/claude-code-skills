@@ -263,6 +263,35 @@ python3 ~/.claude/skills/cmux/scripts/restart_sessions.py           # report
 python3 ~/.claude/skills/cmux/scripts/restart_sessions.py --apply   # restore any NOT RUNNING by id
 ```
 
+**When a panel comes back as a bare shell, `cmux restore claude <id>` TIMES OUT.** Seen on
+six panels between 16 and 20 Oct 2026, several still carrying "Error: Command timed out" on
+screen. What works every time is typing the resume command into the panel itself:
+
+```bash
+python3 ~/.claude/skills/cmux/scripts/check_dead_sessions.py           # report
+python3 ~/.claude/skills/cmux/scripts/check_dead_sessions.py --apply   # revive the dead ones
+python3 ~/.claude/skills/cmux/scripts/check_dead_sessions.py --lost-briefs
+```
+
+It runs `claude --resume <id>` in the panel's own cwd, never `--continue`, and it skips any
+session already running in another panel rather than starting a second copy. Verdicts are
+OK, DEAD (shell prompt, no Claude, revivable), ASLEEP (cmux has not materialised the surface
+since its relaunch, which is normal and left alone), DUPLICATE and NO TRANSCRIPT.
+
+**Why this matters more than it looks.** A dead panel still accepts typed text, so a brief
+sent to it goes to zsh, which answers "zsh: no matches found: (marker ...)" and the work is
+lost with nobody told. A session-to-session request to 'demo.elaitra zip' vanished that way
+on 19 Oct 2026. `send_task.py` now refuses to type into a panel sitting at a shell prompt
+and tells you to revive it first.
+
+**Telling a dead shell from an idle Claude.** Both can show a chevron. The test is oh-my-zsh's
+"(base) ➜ dirname", plus the absence of Claude's status line ("auto mode on", "esc to
+interrupt"). Matching a bare "❯" marks every idle Claude pane dead, which
+`tests/test_send_task.py` now guards against.
+
+Runs every 15 minutes via `com.stephen.dead-session-check`, logging to
+`state/dead-sessions.log`, and should be run once by hand after any cmux relaunch.
+
 It compares cmux's per-panel binding with `~/.claude/sessions/<pid>.json` (the session each live process really is, tied to its panel via `CMUX_PANEL_ID`). Never judge from screen text: on 15 Sep a screen sweep called six workspaces dead and a process-env check called all 66 fine, and both were wrong in different ways. `--apply` types `cmux restore claude <id>` into the panel; cmux refuses to start a copy already running elsewhere, so it cannot collide.
 
 **If the relaunch DROPPED bindings (report shows many LOST BINDING rows), `--apply` will not fix those**, because the current state file no longer knows what belonged where. Use the bulk restorer, which reads the previous state file and restores by session id:
