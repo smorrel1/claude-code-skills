@@ -9,12 +9,19 @@
 export PATH="/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin:$PATH"
 
 SKILL="$HOME/.claude/skills/cmux"
+CMUX="/Applications/cmux.app/Contents/Resources/bin/cmux"
 LOG="$SKILL/state/dead-sessions.log"
 mkdir -p "$SKILL/state"
 
-# Nothing to do if cmux is not running: every panel would read as asleep.
-if ! pgrep -xq cmux; then
-  echo "$(date '+%Y-%m-%d %H:%M:%S')  cmux not running, skipped" >> "$LOG"
+# Nothing to do if cmux cannot be reached: every panel would read as asleep.
+# Ask the CLI rather than looking for a process. `pgrep -xq cmux` was the
+# first attempt and it can never match, because the process name is the full
+# path "/Applications/cmux.app/Contents/MacOS/cmux", not the bare word. That
+# silently turned the whole sweep into a no-op on 21 Oct 2026. Probing the
+# CLI also tests the one thing the sweep actually depends on, which a process
+# check does not: that the app answers.
+if ! "$CMUX" tree --all >/dev/null 2>&1; then
+  echo "$(date '+%Y-%m-%d %H:%M:%S')  cmux not reachable, skipped" >> "$LOG"
   exit 0
 fi
 
