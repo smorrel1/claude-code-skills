@@ -27,7 +27,7 @@
       "description": "Manage Stephen's 30-50 Claude Code sessions running in cmux workspaces. Use when asked \"which session/workspace handles X\", to delegate a task to another session, foreground a workspace, prep for a ca",
       "type": "agent-skill",
       "url": "https://raw.githubusercontent.com/smorrel1/claude-code-skills/HEAD/cmux/SKILL.md",
-      "sha256": "0fa6169917e424805da48c180ff07d182027439f20dba4ea29dc254d56926f39"
+      "sha256": "4069b26a76d8b5d6227c9774c1ecd726e584757d0c6cce3eaa892e48f48b4543"
     },
     {
       "name": "docx-delta",
@@ -83,7 +83,14 @@
       "description": "Extract text from PDFs and send to Kindle for comfortable reading. Use when the user wants to (1) send a PDF to Kindle, (2) convert a PDF for Kindle reading, (3) extract text from a PDF and email it t",
       "type": "agent-skill",
       "url": "https://raw.githubusercontent.com/smorrel1/claude-code-skills/HEAD/pdf-to-kindle/SKILL.md",
-      "sha256": "1a143dcaa4e5d026d36f921c588bea664ae6ed402b9afc6eb3a121db93b0337c"
+      "sha256": "6765dd5e94b789ad43fc0cafcd568edb996801a2b60f17f619b8318c65c2a347"
+    },
+    {
+      "name": "repurpose",
+      "description": "Turn one long-form transcript or article into platform-native posts in one pass - an X thread, a LinkedIn post, and a newsletter section - each checked against AI-writing tells before delivery. Use wh",
+      "type": "agent-skill",
+      "url": "https://raw.githubusercontent.com/smorrel1/claude-code-skills/HEAD/repurpose/SKILL.md",
+      "sha256": "4837d99ded2d68243ab635992fae1299fa69693a6721281c1e1a86f9bf2be871"
     },
     {
       "name": "todo-agent",

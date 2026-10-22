@@ -1,6 +1,6 @@
 # claude-code-skills
 
-> Practitioner-built agent skills: FDA 510(k) porting, meeting automation, email, transcripts to Kindle, AI-tell removal.
+> Practitioner-built agent skills: FDA 510(k) porting, meeting automation, email, transcripts to Kindle, AI-tell removal, content repurposing.
 
 Install: curl -fsSL https://smorrel1.github.io/claude-code-skills/install.sh | bash
 
@@ -18,5 +18,6 @@ Install: curl -fsSL https://smorrel1.github.io/claude-code-skills/install.sh | b
 - [interview-transcript](https://raw.githubusercontent.com/smorrel1/claude-code-skills/HEAD/interview-transcript/SKILL.md): Download and transcribe interviews/talks from YouTube videos and X.com (Twitter) videos/Spaces. Clean transcripts with Claude (removing filler words and transcription errors while preserving facts), a
 - [monthly-report](https://raw.githubusercontent.com/smorrel1/claude-code-skills/HEAD/monthly-report/SKILL.md): Generate monthly board reports. Collects data from Apple Notes, Fireflies, Gmail, and documents, then synthesizes into formatted report. Use when asked to prepare monthly board update or monthly repor
 - [pdf-to-kindle](https://raw.githubusercontent.com/smorrel1/claude-code-skills/HEAD/pdf-to-kindle/SKILL.md): Extract text from PDFs and send to Kindle for comfortable reading. Use when the user wants to (1) send a PDF to Kindle, (2) convert a PDF for Kindle reading, (3) extract text from a PDF and email it t
+- [repurpose](https://raw.githubusercontent.com/smorrel1/claude-code-skills/HEAD/repurpose/SKILL.md): Turn one long-form transcript or article into platform-native posts in one pass - an X thread, a LinkedIn post, and a newsletter section - each checked against AI-writing tells before delivery. Use wh
 - [todo-agent](https://raw.githubusercontent.com/smorrel1/claude-code-skills/HEAD/todo-agent/SKILL.md): Two-way channel between Stephen's Apple Notes To Do list and his cmux agents. Prepends follow-up actions near the top of the note, and every five minutes picks up any line starting with claude (the @ 
 - [zoom-downloader](https://raw.githubusercontent.com/smorrel1/claude-code-skills/HEAD/zoom-downloader/SKILL.md): Move Zoom Docs transcript exports from ~/Downloads into the transcripts folder with a date-stamped filename

@@ -9,6 +9,18 @@ Skills are reusable modules that extend Claude Code's capabilities. Each skill p
 - Scripts and utilities the skill uses to perform tasks
 - Documentation for setup and usage
 
+## For content creators
+
+One recording becomes a week of posts, locally, no subscription:
+
+1. `interview-transcript`: YouTube or X video in, cleaned speaker-labelled transcript out (Kindle delivery optional)
+2. `repurpose`: transcript in, X thread + LinkedIn post + newsletter section out
+3. `humanizer`: every draft checked against 400+ AI-writing tells before you see it
+
+```bash
+curl -fsSL https://smorrel1.github.io/claude-code-skills/install.sh | bash -s -- interview-transcript repurpose humanizer
+```
+
 ## Install in one command
 
 Works with skills.sh tooling in Claude Code, Codex CLI and compatible agents:
