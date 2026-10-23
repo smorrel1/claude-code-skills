@@ -21,6 +21,8 @@ One recording becomes a week of posts, locally, no subscription:
 curl -fsSL https://smorrel1.github.io/claude-code-skills/install.sh | bash -s -- interview-transcript repurpose humanizer
 ```
 
+See it on a real episode: [repurpose/examples](repurpose/examples/) holds the unedited thread, LinkedIn post and newsletter section produced from the David Senra x Travis Kalanick interview.
+
 ## Install in one command
 
 Works with skills.sh tooling in Claude Code, Codex CLI and compatible agents:

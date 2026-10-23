@@ -1,0 +1,11 @@
+What Kalanick actually learned at Uber
+
+David Senra finally got Travis Kalanick on the record for two hours, and the result is less a victory lap than an operating manual. The frame he opens with: "The only constraint on our imagination is management capacity." He treats growth as an inequality he calls the meta problem. Your rate of problem-solving must stay at or above your rate of problem creation; the moment it doesn't, you stop entering new markets until the backlog clears. Going to China was, in his words, creating a problem whose nature you cannot fully predict, and the problems "start coming ashore" six months later.
+
+The competitive sections are the sharpest. His account of the Didi war comes down to one phrase, "efficiency outstrips subsidy": as networks scale, the subsidy a rival can afford shrinks relative to the efficiency edge of the better operator. He credits that mechanic, down to sign-up friction and driver routing, for why Lyft stayed smaller than Uber.
+
+And his fundraising doctrine deserves its own card: "I never get attached to a price. I get attached to a process." Pressed by Bill Gurley in 2014 to take the first term sheet at a $6 billion valuation, he ran his multi-room auction instead and closed at $17.5 billion pre two months later. At peak Uber the process ran five rooms simultaneously for a week, sorted by check size, producing a literal demand curve for the round.
+
+If you only have ten minutes, start at the taxi-medallion history, his case that Uber's real opponent was "a government-condoned cartel that outlaws competition."
+
+Watch the full interview: https://www.youtube.com/watch?v=QVnU5lGlKE8
