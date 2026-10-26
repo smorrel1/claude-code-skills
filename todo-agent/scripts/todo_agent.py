@@ -89,10 +89,17 @@ def trigger_match(line):
     if not rest:
         return None
     first = re.split(r"[\s,.:;!?]+", rest, 1)[0].lower().strip("'’\"")
-    if not m.group("at"):
+    # An explicit "Claude:" (or "@claude") ADDRESSES Claude, so the line is an
+    # instruction whatever word follows. The stopword list exists to reject
+    # prose such as "Claude is good at this", which has no colon. Applying it
+    # to an addressed line cost Stephen several days on 26 Oct 2026: "17.
+    # Claude: can you log into Xero and complete my September financial
+    # statements" was dropped because "can" is a stopword, and nobody was told.
+    addressed = bool(m.group("at") or m.group("punct"))
+    if not addressed:
         if first in STOPWORDS:
             return None
-        if not m.group("punct") and first not in IMPERATIVES:
+        if first not in IMPERATIVES:
             return None
     return rest
 
@@ -620,6 +627,15 @@ When the work is done or delegated, record it back in the note so Stephen can se
 it was picked up:
     python3 ~/.claude/skills/todo-agent/scripts/todo_agent.py mark {ident} "<short outcome>"
 
+Then, once the work has actually FINISHED, add the outcome in one short sentence.
+This is not optional: the tick only says the job was handed over, and without this
+Stephen has to go and find out what came of it himself. It writes in orange, after
+the tick, on the same line:
+    python3 ~/.claude/skills/todo-agent/scripts/todo_agent.py result {ident} "Done 26 Oct: draft saved 14:10, needs your OK"
+
+Say what he now has and what, if anything, he has to do. If you delegated the work,
+call this yourself when the delegate reports back.
+
 Standing rule: any email is saved as a DRAFT for Stephen to review. Never dispatch
 one on the strength of this instruction alone."""
 
@@ -816,6 +832,77 @@ def cmd_mark(a):
     return 0
 
 
+RESULT_COLOUR = "#FF8C00"   # orange, asked for 26 Oct 2026
+RESULT_MARK = "↳"
+
+
+def find_line_end(body, rec):
+    """Offset of the end of this instruction's bullet, or None.
+
+    The same two-step search cmd_mark uses: match on the instruction's own
+    words first, fall back to the recorded index only while the line there
+    still looks like this instruction. Stephen reorders the note constantly,
+    so the index alone is not safe.
+    """
+    hits = [(text, end) for text, end in line_spans(body) if trigger_match(text)]
+    want = (rec.get("text") or "")[:40].lower()
+    if want:
+        matches = [(text, end) for text, end in hits if want in text.lower()]
+        if len(matches) == 1:
+            return matches[0][1]
+        # Prefer the copy that has already been ticked: the result belongs on
+        # the line that was picked up, not on an untouched duplicate.
+        ticked = [end for text, end in matches if DONE_MARK in text]
+        if len(ticked) == 1:
+            return ticked[0]
+        if matches:
+            return matches[-1][1]
+    idx = rec.get("occurrence", 0)
+    if idx < len(hits) and want[:20] in hits[idx][0].lower():
+        return hits[idx][1]
+    return None
+
+
+def cmd_result(a):
+    """Append the outcome of a finished delegation, in orange.
+
+    The tick says the work was handed over. It does not say what came of it,
+    so Stephen still had to go and look. This adds one short sentence after
+    the tick, in orange so the outcome stands out from the instruction.
+
+    Every delegate calls this when it finishes:
+
+        todo_agent.py result <id> "Done 26 Oct: draft saved 14:10, needs your OK"
+    """
+    state = load_state()
+    rec = state["delivered"].get(a.ident) or state.get("pending", {}).get(a.ident)
+    if not rec:
+        print("Unknown instruction id %s" % a.ident)
+        return 1
+    body = get_body(rec["note_id"])
+    at = find_line_end(body, rec)
+    if at is None:
+        print("Could not find that instruction in the note; it has been "
+              "edited or removed. Nothing written.")
+        return 1
+    if rec.get("result"):
+        print("That instruction already carries a result line. Nothing written.")
+        return 1
+
+    # Inline style rather than a class: Apple Notes keeps the span's own
+    # colour through an iCloud round trip, and drops anything a stylesheet
+    # would have supplied.
+    tail = ('<span style="color: %s">%s %s</span>'
+            % (RESULT_COLOUR, RESULT_MARK, esc(a.sentence)))
+    set_body(rec["note_id"], body[:at] + " " + tail + body[at:],
+             "result-" + a.ident)
+    rec["result"] = a.sentence
+    rec["result_at"] = datetime.now().strftime("%Y-%m-%d %H:%M")
+    save_state(state)
+    print("result recorded on %s in %s" % (a.ident, rec["note"]))
+    return 0
+
+
 def cmd_list(_):
     state = load_state()
     notes = todo_notes()
@@ -925,6 +1012,13 @@ def main():
     mk.add_argument("ident")
     mk.add_argument("outcome")
     mk.set_defaults(func=cmd_mark)
+
+    rs = sub.add_parser("result", help="append the outcome of a finished "
+                                       "delegation, in orange")
+    rs.add_argument("ident")
+    rs.add_argument("sentence", help="one short sentence, e.g. "
+                                     "'Done 26 Oct: draft saved 14:10, needs your OK'")
+    rs.set_defaults(func=cmd_result)
 
     a = p.parse_args()
     return a.func(a)

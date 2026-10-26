@@ -32,6 +32,17 @@ Route by what kind of work it is, rather than by whose content it touches:
 
 ## Delegate a task to another session
 
+**If the task came from the To Do note, report the result back to it.** The tick
+the Chief of Staff writes only says the job was handed over. When the work is
+actually finished, one short sentence goes on the same line, in orange:
+
+```bash
+python3 ~/.claude/skills/todo-agent/scripts/todo_agent.py result <id> "Done 26 Oct: draft saved 14:10, needs your OK"
+```
+
+Say what Stephen now has and what, if anything, he still has to do. If you
+delegated the work onward, call this yourself when the delegate reports back.
+
 ### 1. Pick an IDLE session (Stephen, 30 Sep 2026)
 
 "In general choose delegates that are currently inactive for the last few hours if

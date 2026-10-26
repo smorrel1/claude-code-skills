@@ -74,6 +74,27 @@ writing.
 | `scan [--dry-run]` | Find new instructions and hand them over. Runs every 5 min |
 | `list` | Show every trigger line and whether it has been picked up |
 | `mark <id> "<outcome>"` | Put the tick and outcome on the line. The Chief of Staff calls this |
+| `result <id> "<sentence>"` | Append what came of it, in orange, after the tick. Called when the work has FINISHED |
+
+### The two marks on a line
+
+A picked-up instruction ends up carrying two things, and they mean different
+things:
+
+1. **The tick**, written by `mark` when the job is handed over. It says somebody
+   owns this now. It does not say the work happened.
+2. **The result**, written by `result` when the job is finished, in orange
+   (#FF8C00) so it reads apart from the instruction. One sentence: what Stephen
+   now has, and what if anything he still has to do.
+
+Every delegate is told to call `result` in the brief template. If you delegated
+the work, call it yourself when the delegate reports back. `result` refuses to
+write twice on the same instruction, and refuses if the line has been edited
+away, rather than guessing where to put the sentence.
+
+Apple Notes rewrites the inline style as its own `<font color>` tag and keeps
+the colour through a read and write cycle, which is why the span carries the
+colour directly rather than relying on a stylesheet.
 | `prepend --heading H --items F` | Insert a section below Strategy |
 | `target` | Show which note writes go to |
 | `use-note <id-fragment>` | Repin the target note, e.g. after starting a new month's list. This is also what the scan reads, so repinning moves pickups to the new note |
