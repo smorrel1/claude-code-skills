@@ -370,6 +370,9 @@ def main():
     ap.add_argument("--slug", help="name the spooled brief file")
     ap.add_argument("--no-confirm", action="store_true",
                     help="skip transcript confirmation (screen proof only)")
+    ap.add_argument("--force", action="store_true",
+                    help="send even when the task class does not suit the "
+                         "target workspace's class")
     ap.add_argument("--dry-run", action="store_true",
                     help="resolve the target and exit; nothing is typed into it. "
                          "Unattended callers use this as a preflight, so a change "
@@ -394,6 +397,36 @@ def main():
                       ("--window", a.window)):
         if val:
             target += [flag, val]
+
+    # Refuse a task whose class the target plainly cannot hold. The Tom Soker
+    # follow-up, a relationship email, went to "parghi conn & f/u, mac demo", a
+    # code session in ~/code/PythonGUI, on 26 Oct 2026, purely because that
+    # session was idle. Stephen's own colour coding already said it was an
+    # engineering workspace. --force overrides, because sometimes the odd
+    # pairing is deliberate.
+    if resolved_title and not a.force:
+        try:
+            sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+            import workspace_class as W
+            text_for_class = a.text if a.text and a.text != "-" else (a.slug or "")
+            if a.file and os.path.exists(a.file):
+                text_for_class = open(a.file, errors="ignore").read()[:2000]
+            tcls = W.classify_task(text_for_class or "")
+            wcls = next((r["class"] for r in W.load()
+                         if W.norm(r["title"]) == W.norm(resolved_title)), "unknown")
+            if (tcls, wcls) in W.INCOMPATIBLE:
+                best = W.route(text_for_class, top=3)
+                sys.exit(
+                    "REFUSED: this is a %s task and %r is a %s workspace.\n"
+                    "Nothing was sent. Better fits:\n%s\n"
+                    "Use --force if you meant it."
+                    % (tcls, resolved_title, wcls,
+                       "\n".join("  %s (%s)" % (b["workspace"], b["class"])
+                                 for b in best)))
+        except SystemExit:
+            raise
+        except Exception as exc:
+            print("note: class check skipped (%s)" % exc, file=sys.stderr)
 
     if a.dry_run:
         row = session_for(a.workspace, a.surface)

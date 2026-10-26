@@ -41,3 +41,9 @@ fi
 trap 'rmdir "$LOCK" 2>/dev/null' EXIT
 
 timeout 900 python3 "$SKILL/scripts/check_dead_sessions.py" --apply --quiet
+
+# Keep the routing classes current. Cheap (no API calls, reads cmux's state
+# file and the durable registry), so it rides along with this sweep rather
+# than needing a job of its own. Routing reads the cache, so a stale cache
+# means work routed on yesterday's workspace list.
+python3 "$SKILL/scripts/workspace_class.py" --refresh >/dev/null 2>&1 || true

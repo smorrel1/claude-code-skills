@@ -32,6 +32,48 @@ Route by what kind of work it is, rather than by whose content it touches:
 
 ## Delegate a task to another session
 
+### 0. Route by job class, not by who happens to be idle
+
+**Idleness is a tie-breaker, not a reason.** Ranking on idleness alone sent the
+Tom Soker follow-up, a relationship email, to "parghi conn & f/u, mac demo", a
+code session in `~/code/PythonGUI`, on 26 Oct 2026.
+
+```bash
+python3 ~/.claude/skills/cmux/scripts/workspace_class.py --route "<the task>"
+```
+
+It scores class match first, then named contacts and topic overlap, then
+idleness. Classes: business, code, clinical, comms, sales, fundraise, finance,
+legal, personal, tooling.
+
+**Class comes from Stephen's own colour coding** in cmux, which he maintains by
+hand and is therefore the best signal available:
+
+| # | Colour | Class |
+|---|--------|-------|
+| 1 | `#1565C0` blue | business |
+| 2 | `#C0392B` / `#922B21` red | code |
+| 3 | `#196F3D` green | clinical |
+| 4 | `#7D6608` olive | personal |
+| 5 | `#880E4F` pink | comms |
+| 6 | `#4A5C18` | sales |
+| 7 | `#AD1457` | tooling |
+
+An uncoloured workspace falls back to its title, durable-registry topic, then
+cwd. `references/workspace-context.md` is the generated table of all of them,
+refreshed by the 15-minute sweep; `registry-durable.md` remains the
+hand-written half and is where topic and contacts come from.
+
+`send_task.py` **refuses** a plainly wrong pairing, such as a comms task into a
+code session, naming better fits instead of sending. `--force` overrides it,
+because some odd pairings are deliberate.
+
+`workspace_class.py --conflicts` lists workspaces whose colour and title
+disagree. 22 do. Most are harmless, but a few are genuinely mixed: "parghi conn
+& f/u, mac demo" is coloured for engineering and titled for follow-ups, and is
+used for both, which is how the email landed there in the first place. Those
+are worth splitting or recolouring.
+
 **If the task came from the To Do note, report the result back to it.** The tick
 the Chief of Staff writes only says the job was handed over. When the work is
 actually finished, one short sentence goes on the same line, in orange:
