@@ -83,11 +83,18 @@ def resolve_workspace(name):
     titles = {}
     for r in rows:
         titles.setdefault(r.get("workspace") or "", r)
-    want = name.strip().lower()
-    exact = [t for t in titles if t.lower() == want]
+    # Workspaces carry a leading category number ("3 Q4 Fundraise"), so both
+    # sides are compared with it stripped. Without this, every rename to the
+    # numbered scheme would break every lookup that uses the old name, and
+    # "Q4 Fundraise" would stop resolving the moment the 3 was added.
+    def bare(s):
+        return re.sub(r"^\s*[1-9][\s.)-]+", "", s.strip()).strip().lower()
+
+    want = bare(name)
+    exact = [t for t in titles if bare(t) == want or t.strip().lower() == name.strip().lower()]
     if len(exact) == 1:
         return titles[exact[0]]["workspace_ref"], exact[0]
-    part = [t for t in titles if want in t.lower()]
+    part = [t for t in titles if want in bare(t)]
     if len(part) == 1:
         return titles[part[0]]["workspace_ref"], part[0]
     if not part:

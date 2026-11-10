@@ -396,13 +396,19 @@ def find(reg, needle):
     agents = reg.get("agents", {})
     if needle in agents:
         return agents[needle]
+
+    def bare(s):
+        # Strip the leading category number, so "Q4 Fundraise" still finds
+        # "3 Q4 Fundraise" and vice versa.
+        return re.sub(r"^\s*[1-9][\s.)-]+", "", (s or "").strip()).strip().lower()
+
     for a in agents.values():
-        if a["title"].lower() == needle.lower():
+        if bare(a["title"]) == bare(needle):
             return a
-    want = set(re.findall(r"[a-z0-9]+", needle.lower()))
+    want = set(re.findall(r"[a-z0-9]+", bare(needle)))
     best, score = None, 0
     for a in agents.values():
-        have = set(re.findall(r"[a-z0-9]+", a["title"].lower()))
+        have = set(re.findall(r"[a-z0-9]+", bare(a["title"])))
         if not have:
             continue
         s = len(want & have) / max(1, len(want | have))

@@ -97,6 +97,16 @@ def main():
     if A.find(REG, "Pricing DeepLook negotiation") is None:
         bad.append("a loosely worded title should still fuzzy match")
 
+    # 3b. The leading category number must be invisible to lookups, in both
+    #     directions, or renaming to "3 Q4 Fundraise" breaks every caller that
+    #     still says "Q4 Fundraise".
+    numbered = {"agents": {"eee": dict(REG["agents"]["aaa"], session="eee",
+                                       title="4 Pricing, DeepLook nego")}}
+    if (A.find(numbered, "Pricing, DeepLook nego") or {}).get("session") != "eee":
+        bad.append("an old un-numbered name must still find the renamed workspace")
+    if (A.find(REG, "4 Pricing, DeepLook nego") or {}).get("session") != "aaa":
+        bad.append("a numbered name must still find the un-numbered workspace")
+
     # 4. One repeated word must not decide a category. A sales transcript that
     #    says "cmux" many times is still sales.
     sales_heavy = ("cmux " * 40) + "pricing quote distributor channel oem partner"
@@ -112,7 +122,7 @@ def main():
 
     for b in bad:
         print("FAIL " + b)
-    print("%d check(s), %d failure(s)" % (11, len(bad)))
+    print("%d check(s), %d failure(s)" % (13, len(bad)))
     return 1 if bad else 0
 
 
