@@ -47,3 +47,17 @@ timeout 900 python3 "$SKILL/scripts/check_dead_sessions.py" --apply --quiet
 # than needing a job of its own. Routing reads the cache, so a stale cache
 # means work routed on yesterday's workspace list.
 python3 "$SKILL/scripts/workspace_class.py" --refresh >/dev/null 2>&1 || true
+
+# Routing drift. Tags are refreshed automatically; a CATEGORY change is only
+# reported, never applied, because a category that moves is usually a misroute
+# rather than a session genuinely changing job. Hourly is enough, so this runs
+# only on the sweep that lands near the top of the hour.
+if [ "$(date +%M)" -lt 15 ]; then
+  drift=$(timeout 900 python3 "$SKILL/scripts/agent_registry.py" --drift 2>&1)
+  echo "$(date '+%Y-%m-%d %H:%M:%S')  drift check" >> "$SKILL/state/routing-drift.log"
+  echo "$drift" >> "$SKILL/state/routing-drift.log"
+  # Only worth a human's attention when a category looks wrong.
+  if echo "$drift" | grep -q "category changes (NOT applied, confirm first): [1-9]"; then
+    echo "$drift" | sed -n '/category changes/,$p' >> "$SKILL/state/routing-drift-ALERT.log"
+  fi
+fi

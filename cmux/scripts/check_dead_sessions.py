@@ -87,6 +87,46 @@ def classify(text):
     return "UNCLEAR"
 
 
+# A menu waiting on Stephen: the selector sits ON a numbered option, or the
+# pane is asking permission. Note that ordinary output often contains numbered
+# lists, so the list alone proves nothing; what distinguishes a blocked pane is
+# that its normal input box is gone.
+MENU_SELECTOR = re.compile(r"^\s*❯\s*\d+[.)]\s*\S", re.M)
+PERMISSION = re.compile(r"Do you want to (proceed|allow)|"
+                        r"\b1\.\s*Yes\b.*\n.*\b2\.\s*No\b|"
+                        r"Allow this (tool|command)|credit balance is too low",
+                        re.I | re.S)
+# The healthy idle pane: an empty input box between two rules.
+INPUT_BOX = re.compile(r"^\s*❯\s*$", re.M)
+
+
+def blocked_reason(panel, text=None):
+    """Why this pane cannot accept a brief right now, or None.
+
+    Typing into a pane that is showing an AskUserQuestion menu does not queue
+    the text: the keystrokes move the selection and Enter CHOOSES an option.
+    That toggled Stephen's answers twice on 10 Nov 2026, so nothing is ever
+    typed into a pane in this state.
+    """
+    t = text if text is not None else screen(panel, 24)
+    if not t.strip():
+        return None
+    # Unambiguous: Claude Code prints this footer under a selectable menu and
+    # nowhere else. Checked before the input-box test, because a menu can be
+    # drawn while an empty prompt line is still on screen above it.
+    if "Enter to select" in t and ("to navigate" in t or "Esc to cancel" in t):
+        return "waiting on a menu selection"
+    if INPUT_BOX.search(t):
+        return None                      # input box is there, so it can take text
+    if MENU_SELECTOR.search(t):
+        return "waiting on a menu selection"
+    if PERMISSION.search(t):
+        return "waiting on a permission prompt"
+    if "credit balance is too low" in t.lower():
+        return "out of credits"
+    return None
+
+
 def looks_like_shell(panel):
     """True when the panel is sitting at a shell prompt. Used by send_task."""
     return classify(screen(panel)) == "DEAD"

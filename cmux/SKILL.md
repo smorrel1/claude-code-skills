@@ -32,7 +32,52 @@ Route by what kind of work it is, rather than by whose content it touches:
 
 ## Delegate a task to another session
 
-### 0. Route by job class, not by who happens to be idle
+### 0. Route by topic owner, then category, then idleness (10 Nov 2026)
+
+```bash
+python3 ~/.claude/skills/cmux/scripts/agent_registry.py --route "<the brief>"
+```
+
+Evidence is weighed in this order, and the order is the whole point:
+
+| # | Signal | Why it ranks here |
+|---|--------|-------------------|
+| 1 | **Topic tags**, the people and companies the brief names | A call about Nikki Gidwaney belongs where Nikki is already known |
+| 2 | Category, one of nine | Keeps an email out of a build session |
+| 3 | Stephen's cwd rule | `~/code` does code, `sm_elaitra` does business, tooling to "my ai tools" |
+| 4 | Idleness | **Tie-breaker only.** Ranking on it sent the Nikki work to a 893h-idle session about Seb |
+
+**Everything is keyed on session id, never title.** Titles change: "Plan IICME
+travel" became "Plan CA travel" and the lookup simply failed. Titles are a
+display name and are fuzzy-matched.
+
+**A blocked owner is never silently skipped.** If the best target is showing an
+AskUserQuestion menu, a permission prompt, or is out of credits, the router
+returns BLOCKED with its name so the Chief of Staff can tell Stephen or queue
+the brief. Falling through to "any idle session in roughly the right category"
+is exactly how the misroute happened.
+
+**Never press Enter into a pane showing a menu.** The keys move the selection
+and Enter chooses, which toggled Stephen's own answers twice on 10 Nov 2026.
+`send_task.py` detects this and refuses, including under `--dry-run`.
+
+**When Stephen says it went to the wrong cmux:**
+
+```bash
+python3 ~/.claude/skills/cmux/scripts/route_fix.py "<marker>" --to "<workspace>" --from "<wrong one>"
+```
+
+That moves the topic tags to the right agent, marks it confirmed so its
+category is never auto-changed again, strips the tags from the wrong one, and
+records the correction. It does **not** re-send the brief or touch either
+session.
+
+**Drift.** The hourly sweep refreshes tags automatically and only reports a
+category change, to `state/routing-drift-ALERT.log`, because a category that
+moves is usually a misroute rather than a session changing job. Review the
+full classification with `--table`.
+
+### Older: route by job class (26 Oct 2026)
 
 **Idleness is a tie-breaker, not a reason.** Ranking on idleness alone sent the
 Tom Soker follow-up, a relationship email, to "parghi conn & f/u, mac demo", a

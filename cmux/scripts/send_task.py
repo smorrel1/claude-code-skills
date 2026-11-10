@@ -306,6 +306,17 @@ def shell_not_claude(target):
         return False
 
 
+def blocked_target(target):
+    """Why the target cannot take a brief now, or None. Never guesses: any
+    doubt reads as not blocked, so this can only refuse on clear evidence."""
+    try:
+        sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+        import check_dead_sessions as D
+        return D.blocked_reason(None, text=screen(target))
+    except Exception:
+        return None
+
+
 def send_task(target, text, slug=None):
     """Returns (submitted, line, marker, screen). The marker is the phrase to
     grep for in the target's transcript to prove the brief reached it."""
@@ -317,6 +328,16 @@ def send_task(target, text, slug=None):
                 "then send again."
                 % os.path.join(os.path.dirname(os.path.abspath(__file__)),
                                "check_dead_sessions.py"))
+
+    # A pane showing an AskUserQuestion menu does not queue typed text: the
+    # keys move the selection and Enter CHOOSES. That toggled Stephen's own
+    # answers twice on 10 Nov 2026, so stop rather than type.
+    why = blocked_target(target)
+    if why:
+        return (False, "", "",
+                "TARGET IS BLOCKED (%s). Nothing was typed, and pressing Enter "
+                "here would have answered the menu for Stephen.\n"
+                "Tell him, or queue the brief until he has answered." % why)
     if "\n" in text or len(text) > INLINE_MAX:
         path = spool(text, slug)
         marker = os.path.basename(path).replace("-brief.md", "")
@@ -433,6 +454,12 @@ def main():
         if not row:
             print("DRY RUN FAILED: nothing resolved for %s"
                   % (a.workspace or a.surface))
+            return 1
+        why = blocked_target(target)
+        if why:
+            print("DRY RUN: %s is BLOCKED (%s). A real send would refuse, "
+                  "because typing here answers the menu for Stephen."
+                  % (row["workspace"], why))
             return 1
         print("DRY RUN OK: %s  %s %s  session %s  idle %sh. Nothing sent."
               % (row["workspace"], row["workspace_ref"], row["surface_ref"],
