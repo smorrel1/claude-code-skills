@@ -30,6 +30,7 @@ Commands:
 import argparse
 import hashlib
 import json
+import os
 import re
 import subprocess
 import sys
@@ -347,25 +348,40 @@ def set_body(note_id, body, tag, cap=None):
     so that a bad edit is an inconvenience rather than a loss. The new body goes
     via a file because AppleScript string literals cannot carry 100KB safely.
     """
-    BACKUPS.mkdir(exist_ok=True)
-    stamp = datetime.now().strftime("%Y%m%d-%H%M%S")
-    before = get_body(note_id)
-    (BACKUPS / ("%s-%s-before.html" % (stamp, tag))).write_text(before)
+    # Same guards as the apple-notes writer, and the SAME machine-wide lock,
+    # so this job and the other sessions never write at once. Rewriting a note
+    # that is open on screen crashed Notes twice on 11 Nov 2026; the To Do
+    # note is the one Stephen most often has open, so if it is on screen the
+    # write is skipped and this run's tick or result lands on a later cycle.
+    sys.path.insert(0, os.path.expanduser("~/.claude/skills/apple-notes/scripts"))
+    import write_note as W
 
-    if cap:
-        body = cap_fonts(body, cap)
-    body = deflate_fonts(body)
+    with W.notes_lock():
+        if not W.responsive():
+            raise W.NotesBusy("Notes is not responding; write deferred")
+        if note_id in W.open_note_ids():
+            raise W.NoteOpen("the To Do note is open on screen; write deferred "
+                             "to a later cycle so Notes is not rewritten under "
+                             "Stephen's cursor")
+        BACKUPS.mkdir(exist_ok=True)
+        stamp = datetime.now().strftime("%Y%m%d-%H%M%S")
+        before = get_body(note_id)
+        (BACKUPS / ("%s-%s-before.html" % (stamp, tag))).write_text(before)
 
-    tmp = BACKUPS / ("%s-%s-new.html" % (stamp, tag))
-    tmp.write_text(body)
-    osa('''
+        if cap:
+            body = cap_fonts(body, cap)
+        body = deflate_fonts(body)
+
+        tmp = BACKUPS / ("%s-%s-new.html" % (stamp, tag))
+        tmp.write_text(body)
+        osa('''
 tell application "Notes"
   set f to (POSIX file "%s")
   set newBody to (read f as «class utf8»)
   set body of note id "%s" to newBody
 end tell
 ''' % (tmp, note_id))
-    return before
+        return before
 
 
 # ------------------------------------------------------------------ HTML bits
@@ -649,7 +665,24 @@ def cmd_preflight(a):
     return 1
 
 
+def replay_deferred():
+    """Re-run note writes that were deferred because the note was on screen
+    or Notes was not answering. Each is retried until it lands; a delegate's
+    tick or orange result line is therefore late, never lost."""
+    state = load_state()
+    queue = state.get("deferred_writes", [])
+    if not queue:
+        return
+    state["deferred_writes"] = []
+    save_state(state)
+    for argv in queue:
+        r = subprocess.run([sys.executable, os.path.abspath(__file__)] + argv,
+                           capture_output=True, text=True)
+        print("replayed deferred %s: %s" % (argv[0], (r.stdout or r.stderr).strip()[:120]))
+
+
 def cmd_scan(a):
+    replay_deferred()
     state = load_state()
     notes = todo_notes()
     if not notes:
@@ -1021,7 +1054,21 @@ def main():
     rs.set_defaults(func=cmd_result)
 
     a = p.parse_args()
-    return a.func(a)
+    try:
+        return a.func(a)
+    except Exception as exc:
+        # NoteOpen / NotesBusy from the Notes writer: park the command and let
+        # the next scan replay it, rather than failing the delegate's call.
+        if type(exc).__name__ not in ("NoteOpen", "NotesBusy"):
+            raise
+        if a.cmd not in ("mark", "result", "prepend"):
+            print("Not written: %s" % exc)
+            return 1
+        state = load_state()
+        state.setdefault("deferred_writes", []).append(sys.argv[1:])
+        save_state(state)
+        print("Deferred, will be written on a later cycle: %s" % exc)
+        return 0
 
 
 if __name__ == "__main__":

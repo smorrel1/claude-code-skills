@@ -7,6 +7,29 @@ description: Export Apple Notes to markdown files AND edit/append to existing no
 
 Fast Python script to export all Apple Notes to markdown files. Reads directly from the Notes SQLite database, much faster than GUI-based exporters.
 
+## Never rewrite a note that is open on screen (11 Nov 2026)
+
+Notes crashed twice on 11 Nov, at 10:55 and 15:22, with the same uncaught
+exception inside an AppleScript command: `replaceCharactersInRange:withString:
+nil argument`, then "Out of bounds" in the text storage. Each came about a
+minute after a session ran `set body of n to (body of n) & html` to append to a
+note Stephen had open. Rewriting the whole text under a live editor leaves the
+editor pointing into text that no longer exists.
+
+**Rules for every session:**
+
+1. Never hand-write `set body of ...` in osascript. Use
+   `scripts/write_note.py set` or `append`, or `from write_note import set_body, append`.
+2. `append` writes in place only when the note is NOT on screen; if it is,
+   the addition goes into a separate note named "<title>, addendum HH:MM".
+3. `set_body` refuses an open note outright (`NoteOpen`).
+4. Every write takes one machine-wide lock (`~/.claude/notes-write.lock`),
+   checks Notes answers within 8 seconds, and backs off and retries.
+   The todo-agent uses the same lock and defers its writes to a later cycle.
+5. An addition over 15 KB is saved as a file in
+   `Dropbox/Documents/notes-overflow/` and the note gets a one-line pointer.
+6. Never poll a note for input. Use a local file or the coach terminal.
+
 ## Usage
 
 ```bash

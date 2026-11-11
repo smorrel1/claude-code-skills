@@ -145,27 +145,32 @@ def legend_text():
 
 
 def write_note(text, name="cmux colour key"):
-    """Create or replace the Apple Note holding the legend."""
-    body = text.replace("&", "&amp;").replace("<", "&lt;")
-    body = "<div>" + body.replace("\n", "</div><div>") + "</div>"
-    script = '''
-    on run argv
-      set theBody to item 1 of argv
-      tell application "Notes"
-        tell folder "Notes"
-          if (exists note "%s") then
-            set body of note "%s" to theBody
-            return "updated"
-          else
-            make new note with properties {name:"%s", body:theBody}
-            return "created"
-          end if
-        end tell
-      end tell
-    end run''' % (name, name, name)
-    p = subprocess.run(["osascript", "-e", script, body],
-                       capture_output=True, text=True, timeout=60)
-    return p.returncode == 0, (p.stdout + p.stderr).strip()
+    """Create or replace the legend note, through the guarded Notes writer.
+
+    A raw `set body of note` on a note that is open on screen crashed Notes
+    twice on 11 Nov 2026, so this goes through apple-notes/write_note.py,
+    which takes the shared lock, checks Notes is answering and refuses to
+    rewrite a note under the cursor.
+    """
+    sys.path.insert(0, os.path.expanduser("~/.claude/skills/apple-notes/scripts"))
+    import write_note as W
+    body = "<div>" + text.replace("&", "&amp;").replace("<", "&lt;").replace(
+        "\n", "</div><div>") + "</div>"
+    try:
+        note = W.resolve(name)
+    except SystemExit:
+        note = None
+    try:
+        if note:
+            W.set_body(note["id"], body, "colour-key")
+            return True, "updated"
+        W.guarded(lambda: W.osa('''
+tell application "Notes"
+  make new note at folder "Notes" with properties {name:"%s", body:(read (POSIX file "%s") as \u00abclass utf8\u00bb)}
+end tell''' % (name, W._tmpfile(body))))
+        return True, "created"
+    except Exception as exc:
+        return False, str(exc)
 
 
 def main():
