@@ -68,16 +68,18 @@ REC
     open -a Terminal "$rec" >/dev/null 2>&1 || true
 fi
 
-# Open a glance-pane Terminal window tailing the transcript (Mac only,
-# skippable with COACH_NO_WINDOW=1).
+# The coach itself: one interactive terminal window (coach_tui.py) with the
+# typed-question prompt, hotkeys and the guide pinned at the bottom. Replaces
+# the Safari page, the "Ask coach" note and the transcript glance pane, per
+# Stephen on 11 Nov 2026. Skip with COACH_NO_WINDOW=1.
 if [[ "$(uname)" == "Darwin" && -z "${COACH_NO_WINDOW:-}" ]]; then
-    show_script="$HOME/.claude/skills/meeting-coach/scripts/show_transcript.sh"
-    if [[ -x "$show_script" ]]; then
-        osascript \
-            -e "tell application \"Terminal\" to do script \"$show_script\"" \
-            -e 'tell application "Terminal" to activate' \
-            >/dev/null 2>&1 || true
-    fi
+    tui="$COACH_DIR/coach.command"
+    cat >"$tui" <<TUI
+#!/bin/zsh -il
+exec /opt/anaconda3/bin/python3 "\$HOME/.claude/skills/meeting-coach/scripts/coach_tui.py"
+TUI
+    chmod +x "$tui"
+    open -a Terminal "$tui" >/dev/null 2>&1 || true
 fi
 
 cat <<EOF

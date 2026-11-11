@@ -55,6 +55,9 @@ Rules, all of them about being usable out loud:
   instead, for example what he will follow up with and by when.
 - Never invent a number. If a figure is needed and you do not have it, tell
   him to give the range he is sure of or to promise the exact figure later.
+- Never state a regulatory fact (device class, predicate, clearance, CE or
+  UKCA status) unless it is in the transcript. If asked and it is not, tell
+  him to say he will confirm it in writing.
 - No em dashes. Use commas or full stops. Stephen never uses them."""
 
 QUESTION = re.compile(r"\?\s*$")

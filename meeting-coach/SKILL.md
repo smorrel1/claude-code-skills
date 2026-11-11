@@ -141,47 +141,36 @@ as `\n`). Never mirror silence dots. Append with Bash, e.g.
 `python3 -c '...json.dump...'` or a here-doc `>>` append; keep it atomic
 (one write per line).
 
-## The interface is the page, not the terminal (11 Nov 2026)
+## The interface: one terminal window (11 Nov 2026, revised)
 
-Stephen could not use the coach during calls on 10 and 11 Nov. The advice was
-fine; where it appeared was not. The terminal carried too much text, lines
-wrapped and scrolled while he was reading, he did not know the hotkeys, and he
-could not find where to type a question. So the terminal stops being the
-interface.
-
-**Start of call, in its own pane:**
+Stephen tried the Safari page plus "Ask coach" Apple Note and asked to go back
+to a single interactive terminal. Both are dropped. The coach is now
+`coach_tui.py`, opened by `start_zoom_coach.sh`, or by hand:
 
 ```bash
-python3 ~/.claude/skills/meeting-coach/scripts/coach_ui.py init     # page + Safari window + the note
-python3 ~/.claude/skills/meeting-coach/scripts/coach_ui.py watch    # poll the note, heartbeat only
+open -a Terminal ~/.coach/coach.command
 ```
 
-**During the call, the coach session posts every alert with:**
+| # | Key | Does |
+|---|-----|------|
+| 1 | type + Enter | Ask the coach anything, privately |
+| 2 | F1 / Ctrl-A | Answer the last question somebody asked him |
+| 3 | F2 / Ctrl-S | Summarise the last 45 seconds |
+| 4 | F3 / Ctrl-W | Show the recent transcript |
+| 5 | F4 / Ctrl-L | Clear the answer pane |
+| 6 | F10 / Ctrl-Q | Quit |
 
-```bash
-python3 ~/.claude/skills/meeting-coach/scripts/coach_ui.py alert "<one line>"
-```
+The guide is pinned to the bottom line, kept under 80 characters so a normal
+window never cuts off F10. Coaching alerts show at the top, newest in bold
+yellow, three older ones dimmed. A red banner appears if the transcript stops.
+Answers stream in about 1.5 to 2.5 seconds.
 
-| # | Channel | What it carries |
-|---|---------|-----------------|
-| 1 | `~/coach-alerts.html` in its own Safari window | Newest alert on one line at 46px; the three before it small and grey below. Refreshes itself every 5s |
-| 2 | Apple Note **"Ask coach"** | He types a question on a new line; `watch` picks up the last line within 15s and prints `QUESTION: ...` for the coach session |
-| 3 | The terminal | **One heartbeat line.** Nothing to read, nothing scrolls |
+The coach session still posts alerts with `coach_ui.py alert "<line>"`, which
+now only writes `~/.coach/ui-state.json` for this window to read.
 
-A five-line "how to use" is pinned small and grey at the bottom of the page
-**permanently**, not only at the start: a reminder that vanishes when the first
-alert lands does not fix not knowing the hotkeys.
-
-**Keep alerts to one line.** The big slot is one line of about 46px. A
-paragraph will not fit and will push the older alerts off the screen.
-
-`COACH_PAGE` and `COACH_UI_STATE` override the paths. Use them for any test or
-rehearsal: on 11 Nov the live i4i interview coach was writing to
-`~/coach-alerts.html` while this was being built, and a careless test would
-have wiped the page he was reading.
-
-`coach_ui.py demo <transcript.jsonl> --count 4` replays a recorded call into
-the page, which is how to check it reads well before you need it.
+The launcher must be an INTERACTIVE shell (`#!/bin/zsh -il`): the API key is
+set in `~/.zshrc`, which a login-only shell does not read, and the window
+otherwise closes immediately.
 
 ## When the transcript stops (11 Nov 2026)
 

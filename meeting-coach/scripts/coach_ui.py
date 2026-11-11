@@ -151,7 +151,8 @@ def cmd_alert(a):
     st["alerts"].insert(0, {"text": a.text, "at": datetime.now().strftime("%H:%M")})
     st["alerts"] = st["alerts"][:KEEP]
     save(st)
-    write_page(st["alerts"])
+    # No page any more: the coach lives in one terminal window (coach_tui.py)
+    # by Stephen's choice, 11 Nov 2026, and that window reads this state file.
     return 0
 
 
