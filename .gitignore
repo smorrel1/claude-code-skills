@@ -101,3 +101,6 @@ cmux/state/
 
 # Timestamped backups made before editing a live script
 *.bak-20*
+
+# Note bodies backed up before every write: private, never publish.
+apple-notes/backups/
