@@ -190,6 +190,35 @@ database. Two defences now run by default:
    permission. Stop it with Ctrl-C at the end of the call. Skip it with
    `COACH_NO_BACKUP=1`.
 
+**What happened on 11 Nov, for the record.** The i4i committee interview was a
+Teams call, 10:04 to 10:31, with the Zoom note listening alongside. Zoom's
+transcription stopped at 10:19:29. The producer stayed healthy throughout: its
+log shows "transcript live" at 10:04:22 and "store cleared" at 10:31:33 with no
+error between, and the note Stephen saved from Zoom
+(`Elaitra_gc/agendas-minutes-notes/20261111-1004-Teams-i4i-committee-interview.md`)
+ends at the same second. So the loss was inside Zoom. Calls on 4, 6 and 9 Nov
+of 24 to 80 minutes captured to the end, so it is not a fixed time limit.
+
+Two hypotheses: an audio device change around 10:19 (Zoom's notes listen to
+one input), or the notes webview pausing behind a full-screen Teams window.
+**The producer now logs both**, to test them next time:
+
+- `audio: input=... output=...` at start and whenever either changes;
+- `front app: ...` whenever the frontmost app changes;
+- `no new transcript records in 60s (N total)` while a meeting is live, which
+  pins the minute Zoom stopped.
+
+So after the next truncation, the log will show whether a device or window
+change came first.
+
+**Fallback records when Zoom truncates.** The lines already written survive in
+`~/live-transcript.jsonl` and in the coach terminal's scrollback, and the
+backup recording above has the whole call.
+
+**For a high-stakes call**, the backup recording is the parallel capture. The
+Fireflies bot (`start_coach.sh`) is the other option, but it joins the call
+visibly, so use it only where a recording bot is acceptable to the other side.
+
 ## Press "a" to answer the last question (9 Nov 2026)
 
 Typing a question into the Claude session is fine between topics, but it is too
