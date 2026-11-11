@@ -183,6 +183,24 @@ have wiped the page he was reading.
 `coach_ui.py demo <transcript.jsonl> --count 4` replays a recorded call into
 the page, which is how to check it reads well before you need it.
 
+## When the transcript stops (11 Nov 2026)
+
+Zoom's My Notes transcript can stop without warning. During the i4i panel on
+11 Nov it stopped at 10:18 while the meeting ran to 10:31, and the last 13
+minutes were lost: not in Zoom's export, not in our feed, not in Zoom's local
+database. Two defences now run by default:
+
+1. **Dead-feed alarm.** `coach_ui.py watch` checks every 15 seconds. If the
+   producer says a meeting is live but no new transcript line has arrived for
+   60 seconds, the big slot on the page reads "TRANSCRIPT STOPPED. Check the
+   Zoom note", and says so again when it recovers.
+2. **Backup recording.** `start_zoom_coach.sh` opens a second Terminal window
+   recording mic and system audio locally with whisper.cpp, to
+   `sm_elaitra/transcripts/<date>_<time>-backup-recording.md`. It runs in
+   Terminal because system audio needs Terminal's Screen Recording
+   permission. Stop it with Ctrl-C at the end of the call. Skip it with
+   `COACH_NO_BACKUP=1`.
+
 ## Press "a" to answer the last question (9 Nov 2026)
 
 Typing a question into the Claude session is fine between topics, but it is too

@@ -166,11 +166,65 @@ def cmd_init(a):
     return 0
 
 
+TRANSCRIPT = os.path.expanduser(os.environ.get("COACH_TRANSCRIPT",
+                                               "~/live-transcript.jsonl"))
+STALE_SECS = 60
+
+
+def meeting_live():
+    """True while the newest producer log says a transcript is live.
+
+    The producer writes "transcript live" when Zoom starts a transcript and
+    "transcript store cleared (meeting ended)" when it stops, so the last of
+    those two lines says whether a call is in progress.
+    """
+    import glob
+    logs = sorted(glob.glob(os.path.expanduser("~/.coach/*-zoom.log")),
+                  key=os.path.getmtime)
+    if not logs:
+        return False
+    state = False
+    for line in open(logs[-1], errors="ignore"):
+        if "transcript live" in line:
+            state = True
+        elif "store cleared" in line:
+            state = False
+    return state
+
+
+def feed_stalled(now=None):
+    """Seconds since the transcript last grew, if a live call has gone quiet.
+
+    On 11 Nov 2026 Zoom stopped transcribing the i4i panel at 10:18 while the
+    meeting ran to 10:31, and nothing said so: a silent coach looks exactly
+    like a coach with nothing to say. A live meeting with no new line for a
+    minute is the signal.
+    """
+    if not meeting_live():
+        return None
+    try:
+        age = (now or time.time()) - os.path.getmtime(TRANSCRIPT)
+    except OSError:
+        return None
+    return age if age >= STALE_SECS else None
+
+
 def cmd_watch(a):
     """Poll the note. New questions go to stdout for the coach session."""
     st = load()
     last_beat = 0
+    alarmed = False
     while True:
+        stalled = feed_stalled()
+        if stalled and not alarmed:
+            cmd_alert(argparse.Namespace(
+                text="TRANSCRIPT STOPPED %ds ago. Check the Zoom note: is it "
+                     "open with Transcript on?" % stalled))
+            print("ALARM: transcript stalled %ds" % stalled, flush=True)
+            alarmed = True
+        elif not stalled and alarmed:
+            cmd_alert(argparse.Namespace(text="Transcript flowing again."))
+            alarmed = False
         q = latest_question(note_body())
         if q and q != st.get("seen_question"):
             st["seen_question"] = q
