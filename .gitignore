@@ -104,3 +104,6 @@ cmux/state/
 
 # Note bodies backed up before every write: private, never publish.
 apple-notes/backups/
+
+# whatsapp: personal contact alias map (names + numbers), never publish
+whatsapp/aliases.json

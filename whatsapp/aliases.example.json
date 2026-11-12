@@ -1,0 +1,5 @@
+{
+  "_comment": "Copy to aliases.json (gitignored) and edit. Value is either a chat name string, or an object with chat and/or phone. phone (E.164) is required to send.",
+  "nickname": {"chat": "Full Contact Name", "phone": "+447700900000"},
+  "shortname": "Full Contact Name"
+}
