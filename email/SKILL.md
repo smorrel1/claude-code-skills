@@ -60,19 +60,22 @@ notice whose shape is set by someone else. Even then, keep the point near the to
 
 ## PERSUASION CHECK: when the email asks something of someone (12 Nov 2026)
 
-Run after the thread lookup and org-sense, before humanizer. Apply where it fits; usually two or three lines apply, not all nine. **It must never make the email longer**: the 50 to 125 word and one-ask rules above win.
+Run after the thread lookup and org-sense, before humanizer. Apply where it fits; usually two or three lines apply, not all ten. **It must never make the email longer**: the 50 to 125 word and one-ask rules above win.
 
 | # | Check | Source |
 |---|-------|--------|
-| 1 | **Lead with what they gain.** Ask "why would they want to?" and put that in the opening with the ask | Carnegie, *How to Win Friends and Influence People*, Part 1 Ch 3 ("arouse in the other person an eager want"); Pink, *To Sell Is Human*, Ch 4 "Attunement" |
-| 2 | **One easy, specific, dated action.** Make the yes small | Pink, Ch 6 "Clarity"; Cialdini, *Influence*, Ch 7 "Commitment and Consistency" |
-| 3 | **Sincere, specific appreciation** of something real they did. Never flattery | Carnegie, Part 1 Ch 2 "The Big Secret of Dealing with People"; Part 4 Ch 1 "If You Must Find Fault, This Is the Way to Begin" |
-| 4 | **Their name and their world**: their project, patients, deadline, not ours | Carnegie, Part 2 Ch 3 (names) and Ch 5 "How to Interest People" |
-| 5 | **Give before asking**, when there is something real to give | Cialdini, *Influence*, Ch 2 "Reciprocation" |
-| 6 | **Let the idea be theirs.** Ask a "how" or "what" question, or a no-oriented one: "Would it be a bad idea to...?" | Carnegie, Part 3 Ch 7 "How to Get Cooperation"; Voss, *Never Split the Difference*, Ch 7 "Create the Illusion of Control" and Ch 5 "Beware 'Yes', Master 'No'" |
-| 7 | **Name the likely objection** before they do: "It may seem early to..." | Voss, Ch 3 "Don't Feel Their Pain, Label It" |
-| 8 | **Proof only if true and checkable**: a named clinician who agreed, a published result, a real shared tie (KCL, the same grant) | Cialdini, *Influence*, Ch 4 "Social Proof", Ch 5 "Authority", Ch 8 "Unity"; *Pre-Suasion* on what the opening line primes |
-| 9 | **An easy way to say no**, so they keep face | Carnegie, Part 4 Ch 5 "Let the Other Person Save Face" |
+| 1 | **Lead with what they gain**, in the opening with the ask. Payoff, not features | Carnegie Pt 1 Ch 3; Pink Ch 4; Rackham, *SPIN Selling* |
+| 2 | **Ask for the smallest real step**, specific and dated | Pink Ch 6; Berger, *The Catalyst* (distance); Cialdini, *Influence* Ch 7 |
+| 3 | **Lower the risk**: a pilot, a 15-minute call, an easy no | Berger (uncertainty, reactance); Carnegie Pt 4 Ch 5; Robbins (certainty) |
+| 4 | **Teach one true thing** about their problem they may not know | Dixon and Adamson, *The Challenger Sale*; Cialdini Ch 2 |
+| 5 | **Their name, their world, why them** | Carnegie Pt 2 Ch 3, Ch 5; Robbins (significance) |
+| 6 | **Sincere, specific appreciation**, never flattery | Carnegie Pt 1 Ch 2 |
+| 7 | **A calibrated or no-oriented question**: "How would you...?", "Would it be a bad idea to...?" | Voss, *Never Split the Difference* Ch 7, Ch 4 |
+| 8 | **Name the likely objection first** (accusation audit, labelling) | Voss Ch 3 |
+| 9 | **Proof only if true**, ideally from more than one source | Cialdini Ch 4, 5, 8; Berger (corroborating evidence) |
+| 10 | **Calm, not needy**: no chasing, no over-explaining, written rested | Klaff, *Pitch Anything*; Robbins (state) |
+
+Fuller reference, with what each author offers and what was left out: `references/persuasion.md`.
 
 Chapter numbers: Carnegie revised edition (1981); Cialdini *Influence*, new and expanded edition (2021).
 
