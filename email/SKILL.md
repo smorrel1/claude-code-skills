@@ -20,6 +20,44 @@ Read, search, and draft emails using the Gmail API with OAuth credentials.
 
 When in doubt, assume the user wants a real Gmail draft (not just text pasted in the conversation) and produce one via this skill. Do not display email text inline as a substitute for drafting unless the user explicitly says they only want to see the text.
 
+## DEFAULT STRUCTURE: the ask first, then the reason (Stephen, 12 Nov 2026)
+
+Every email opens with what Stephen wants from the reader. The justification
+follows. Background goes last, or into a later email.
+
+| # | Rule | Source |
+|---|------|--------|
+| 1 | **First sentence = the request or the answer.** Then the reasons, then detail. Never build up to the ask | Barbara Minto, *The Pyramid Principle* (McKinsey, 1970s): "start with the answer, then support it" |
+| 2 | **When context is needed, keep it to one line before the ask**: situation, what changed, so what we need | Minto's SCQA (Situation, Complication, Question, Answer) |
+| 3 | **The opening states who, what, when and why** in one or two sentences, so a reader who stops there can still act | BLUF, "bottom line up front": Kabir Sehgal, "How to Write Email with Military Precision", *Harvard Business Review*, Nov 2016 |
+| 4 | **The subject line says what kind of email it is**, for example "Decision needed: ...", "Please sign: ...", "For info: ...", "Request: ..." | Same HBR article, which uses ACTION, SIGN, INFO, DECISION, REQUEST, COORD |
+| 5 | **50 to 125 words.** Longer emails get fewer replies | Boomerang analysis of 40 million emails, 2016: 75 to 100 words had the best reply rate (51%), and 50 to 125 words all stayed above 50% |
+| 6 | **Ask one to three clear questions.** Emails with 1 to 3 questions were about 50% more likely to get a reply than emails with none | Boomerang, same study |
+| 7 | **Simple words, short sentences.** Third-grade reading level got a 53% reply rate; college level got 39% | Boomerang, same study; matches the STE100 style below |
+| 8 | **One ask per email.** Further points go in follow-up emails | Stephen's standing rule (CLAUDE.md), consistent with 1 to 6 |
+
+**Shape of a typical draft:**
+
+```
+Subject: Decision needed: pilot start date for KCH
+
+Hi Keshthra,
+
+Could you confirm the pilot can start on 1 December? [ask]
+
+We need the date by Friday to book the GPU and train the readers. [why]
+
+[one short line of detail, or nothing]
+
+Best,
+Stephen
+```
+
+Exceptions: a reply that only says thank you, and a formal letter or legal
+notice whose shape is set by someone else. Even then, keep the point near the top.
+
+`check_plain_english.py` warns when a body runs past 125 words or asks no question.
+
 ## DEFAULT STYLE: plain English on STE100 principles (Stephen, 14 Oct 2026)
 
 Every email is written in plain English, following ASD-STE100 principles but WITHOUT
@@ -112,6 +150,8 @@ for m in th['messages']:
 PY
 ```
 
+**Every email you mention, anywhere, carries its verified status word (added 1 Nov 2026).** In chat, in a note, in a report table, in a playbook entry: "SENT 19 Oct 22:50", "DRAFT (unsent) 29 Oct 10:56", "RECEIVED 28 Oct 16:07". Never a bare date, never "the 14:29 email". `read` and `search` now print a `Status:` line from `labelIds` on every message (`gmail_utils.py`, 1 Nov 2026), so the information is always on screen; copy it, do not infer it. Failure that forced this: on 28 Oct 2026 a `read --id` of a draft reply to Greg Sorensen (DeepHealth) was reported as "sent at 14:29", a strategy note and the OEM playbook recorded a withdrawn claim as having "reached" him, and the correction only came from a `thread-state` check the next day. Headers lie about status; labels do not.
+
 When reporting status to the user, state it explicitly and only after this check — "the Ming P.S. is still a **draft** (04:14), not sent." Never let a draft's save-time masquerade as a send. This pairs with the CLAUDE.md rule to refer to every email by **status + time**: the time is meaningless if the status is guessed wrong.
 
 ## Threading guards (added 2026-09-30 after a misthreaded draft)
@@ -165,6 +205,8 @@ Mandatory workflow before drafting any email:
 7. **Report the thread you landed on.** In your reply, state the thread subject and the save time of the original message you replied to, so the user can catch a wrong-thread before send.
 
 8. **Quote this email's history in the reply body, exactly as a mail client would on Reply, Reply All or Forward.** That means the parent message and the quoted chain already embedded in the parent's own body (the history the correspondent has themselves seen), oldest at the bottom, parent immediately above the new content, each nested in a blockquote. Do NOT assemble the quote by iterating every message in the Gmail `threadId`: a broadcast (BCC) email collects every recipient's separate reply into one thread in this mailbox, and quoting the thread leaks other correspondents' replies to the recipient (this happened on 27 Jul 2026: a reply to one shareholder included six other shareholders' consent replies and a phone number).
+
+9. **Every reply carries its thread, by default, including when you EDIT a draft.** `draft --reply-to` adds the quote automatically. `update-draft --body` / `--force-body` replaces the whole body, so it used to delete the quote: on 10 Nov 2026 completing Stephen's Apple Mail reply to Walker Turner (Dr Reich thread) wiped the quoted history. `update-draft` now re-attaches the live draft's quoted thread under any new body that has none (`--no-quote` only when Stephen asks for a reply without history). Prefer `update-draft --replace OLD NEW` on someone else's draft. After any update, `read-draft` and confirm the parent message's text is still below yours before reporting the draft as done. If the quote is already gone, rebuild it from the parent with `format_quoted_reply_html(get_email_for_reply(...))`.
 
 Failure modes to avoid, all of which have happened in past sessions:
 

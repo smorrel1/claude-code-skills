@@ -82,6 +82,19 @@ def main():
             notes.append("%s appears: gloss it on first use unless the reader "
                          "uses it daily" % term)
 
+    # Boomerang, 40 million emails (2016): 50 to 125 words and one to three
+    # questions got the most replies. Advice only, never a failure.
+    words_total = sum(len(s.split()) for s in body)
+    if words_total > 125:
+        notes.insert(0, "%d words; replies fall off past 125, aim for 50 to 125"
+                     % words_total)
+    if "?" not in " ".join(body):
+        notes.insert(0, "no question asked; emails asking 1 to 3 get more replies")
+    if body and not re.search(r"\?|\b(please|could you|can you|would you|"
+                              r"confirm|let me know|decide|sign|approve)\b",
+                              " ".join(body[:2]), re.I):
+        notes.insert(0, "the ask is not in the first two sentences; put it first")
+
     if not a.quiet:
         print("%s  (%d sentence(s))" % (a.file, len(body)))
         for p in problems:
