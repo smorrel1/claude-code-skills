@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
-"""Midday email review: fetch, then render a decision page Stephen can act on.
+"""Midday email review: fetch, then render a decision page the user can act on.
 
-Stephen's instruction, 9 Sep 2026: "every day at midday review my new emails
+The user's instruction, 9 Sep 2026: "every day at midday review my new emails
 received since your last review and make an html page by priority with suggested
 draft or guidance requests and let me give consolidated feedback for your action."
 
@@ -16,9 +16,9 @@ judgement and the page itself is deterministic:
 
 Between fetch and page, `claude -p` reads inbox.json and writes reviewed.json:
 priority, one-line summary, and either a suggested draft or a question for
-Stephen. That is the only step with a model in it.
+the user. That is the only step with a model in it.
 
-Nothing here dispatches mail. The page's one button sends Stephen's decisions
+Nothing here dispatches mail. The page's one button sends the user's decisions
 to the Claude session that made it (paste_back_server.py); copy is the fallback.
 """
 import argparse
@@ -68,10 +68,9 @@ def cmd_mark(_):
 
 # ----------------------------------------------------------------------- fetch
 
-EXPECTED = {
-    "work": "stephen.morrell@elaitra.com",
-    "gmail": "stephen.morrell@gmail.com",
-}
+# Which address each account must authenticate as. Kept out of the repo in
+# accounts.local.json ({"work": "...", "gmail": "..."}), which is git-ignored.
+EXPECTED = json.loads((SKILL / "accounts.local.json").read_text())
 
 
 def gmail(account):
@@ -106,7 +105,7 @@ def fetch_account(account, after_epoch):
     """Everything that ARRIVED in the inbox since the watermark.
 
     Deliberately `in:inbox`: mail already filed by the spam rules, or sent by
-    Stephen, is not part of a review of what needs his attention.
+    the user, is not part of a review of what needs his attention.
     """
     svc = gmail(account)
     q = "in:inbox -in:chats after:%d" % after_epoch
@@ -248,7 +247,7 @@ def reply_target(override=None):
     """The cmux workspace the decisions should go back to, by NAME.
 
     The calling workspace when the page is made inside cmux, else Chief of
-    staff, which is where Stephen pastes them when the launchd run made it.
+    staff, which is where the user pastes them when the launchd run made it.
     """
     if override:
         return override

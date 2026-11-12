@@ -107,3 +107,6 @@ apple-notes/backups/
 
 # whatsapp: personal contact alias map (names + numbers), never publish
 whatsapp/aliases.json
+
+# mail-assistant: real account addresses
+mail-assistant/accounts.local.json

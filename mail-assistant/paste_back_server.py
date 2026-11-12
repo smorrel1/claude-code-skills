@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Local listener that takes the email-review decisions straight to Claude.
 
-Stephen, 12 Nov 2026: he had to copy the review page's output and paste it into
+12 Nov 2026: the user had to copy the review page's output and paste it into
 the Chief of staff session by hand. The page is a local file, so it cannot run
 cmux itself; it POSTs here instead, and this hands the text to cmux's
 send_task.py, which submits it and confirms it landed in that session's
@@ -14,7 +14,7 @@ Only 127.0.0.1 is bound, and every send must carry the token written to
 state/paste-back-token, which only pages made by email_review.py contain. So a
 web page elsewhere cannot push text into a Claude session.
 
-Runs under launchd (com.smorrell.email-review-paste-back).
+Runs under launchd (a LaunchAgent, e.g. com.<you>.email-review-paste-back).
 """
 import json
 import secrets
@@ -45,7 +45,7 @@ def deliver(workspace, text):
     """Spool the decisions to a file and send a one-line pointer via send_task."""
     SPOOL.mkdir(parents=True, exist_ok=True)
     f = SPOOL / ("%s-decisions.md" % time.strftime("%Y%m%d-%H%M%S"))
-    f.write_text("Email review decisions from Stephen (sent from the review page). "
+    f.write_text("Email review decisions from the user (sent from the review page). "
                  "Act on each one; drafts only, never send.\n\n" + text + "\n")
     p = subprocess.run([sys.executable, str(SEND_TASK), "--workspace", workspace,
                         "--file", str(f), "--slug", "email-review-decisions",
