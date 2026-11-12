@@ -58,6 +58,34 @@ notice whose shape is set by someone else. Even then, keep the point near the to
 
 `check_plain_english.py` warns when a body runs past 125 words or asks no question.
 
+## PERSUASION CHECK: when the email asks something of someone (12 Nov 2026)
+
+Run after the thread lookup and org-sense, before humanizer. Apply where it fits; usually two or three lines apply, not all nine. **It must never make the email longer**: the 50 to 125 word and one-ask rules above win.
+
+| # | Check | Source |
+|---|-------|--------|
+| 1 | **Lead with what they gain.** Ask "why would they want to?" and put that in the opening with the ask | Carnegie, *How to Win Friends and Influence People*, Part 1 Ch 3 ("arouse in the other person an eager want"); Pink, *To Sell Is Human*, Ch 4 "Attunement" |
+| 2 | **One easy, specific, dated action.** Make the yes small | Pink, Ch 6 "Clarity"; Cialdini, *Influence*, Ch 7 "Commitment and Consistency" |
+| 3 | **Sincere, specific appreciation** of something real they did. Never flattery | Carnegie, Part 1 Ch 2 "The Big Secret of Dealing with People"; Part 4 Ch 1 "If You Must Find Fault, This Is the Way to Begin" |
+| 4 | **Their name and their world**: their project, patients, deadline, not ours | Carnegie, Part 2 Ch 3 (names) and Ch 5 "How to Interest People" |
+| 5 | **Give before asking**, when there is something real to give | Cialdini, *Influence*, Ch 2 "Reciprocation" |
+| 6 | **Let the idea be theirs.** Ask a "how" or "what" question, or a no-oriented one: "Would it be a bad idea to...?" | Carnegie, Part 3 Ch 7 "How to Get Cooperation"; Voss, *Never Split the Difference*, Ch 7 "Create the Illusion of Control" and Ch 5 "Beware 'Yes', Master 'No'" |
+| 7 | **Name the likely objection** before they do: "It may seem early to..." | Voss, Ch 3 "Don't Feel Their Pain, Label It" |
+| 8 | **Proof only if true and checkable**: a named clinician who agreed, a published result, a real shared tie (KCL, the same grant) | Cialdini, *Influence*, Ch 4 "Social Proof", Ch 5 "Authority", Ch 8 "Unity"; *Pre-Suasion* on what the opening line primes |
+| 9 | **An easy way to say no**, so they keep face | Carnegie, Part 4 Ch 5 "Let the Other Person Save Face" |
+
+Chapter numbers: Carnegie revised edition (1981); Cialdini *Influence*, new and expanded edition (2021).
+
+**Guardrails.** Honesty first. Never invent scarcity, a deadline, demand, or who else has signed up: false scarcity is a lie, and found out it costs the relationship (Cialdini, Ch 6 "Scarcity", works only when true). Never inflate scope or engagement. No manipulation: if a line reads as a trick when you read it back as the recipient, cut it.
+
+**Example** (illustrative; every claim in a real draft must be true):
+
+Before (61 words):
+> Hi Dr Shah, I hope you are well. I am the CEO of Elaitra, an AI company. We have built ViewFinder, which helps radiologists read DBT. We are looking for sites for a reader study and wondered whether you might be interested. We have funding and a strong team. Please let me know if you would like to discuss. Best, Stephen
+
+After (65 words):
+> Hi Dr Shah, would it be a bad idea to give your trainees a faster way to find the matching lesion on DBT? Your reader-fatigue audit is why I am asking. Our KCH reader study needs one more site, and it funds reader time. Could we take 15 minutes next week to see if it fits? If the timing is wrong, just say. Best, Stephen
+
 ## DEFAULT STYLE: plain English on STE100 principles (Stephen, 14 Oct 2026)
 
 Every email is written in plain English, following ASD-STE100 principles but WITHOUT
